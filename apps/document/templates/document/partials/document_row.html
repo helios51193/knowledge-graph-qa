@@ -1,0 +1,20 @@
+<div class="card bg-base-100 shadow p-4 flex justify-between items-center">
+
+    <div>
+        <h3 class="font-semibold">{{ doc.title }}</h3>
+        <span class="badge badge-info">
+            {{ doc.status }}
+        </span>
+    </div>
+
+    {% if doc.status != "completed" %}
+        <div 
+            hx-get="{% url 'documents:status' doc.id %}"
+            hx-trigger="every 2s"
+            hx-swap="outerHTML"
+        >
+            <span class="loading loading-spinner"></span>
+        </div>
+    {% endif %}
+
+</div>

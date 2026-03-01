@@ -1,7 +1,7 @@
 from django import forms
 from django.core.exceptions import ValidationError
 
-from auth_manager.models import User
+from apps.auth_manager.models import User
 
 
 class LoginForm(forms.Form):

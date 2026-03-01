@@ -1,0 +1,7 @@
+<div id="document-list" class="space-y-3">
+    {% for doc in documents %}
+        {% include "documents/partials/document_row.html" %}
+    {% empty %}
+        <p class="text-gray-500">No documents uploaded yet.</p>
+    {% endfor %}
+</div>

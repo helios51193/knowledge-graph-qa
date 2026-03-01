@@ -27,7 +27,7 @@ SECRET_KEY = os.getenv("DJANGO_SECRET",'django-insecure-f91t#-h^k=ypzga*-wlidx6f
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True if os.getenv("ENVIRONMENT","local") == "local" else False
 
-ALLOWED_HOSTS = ["localhost","127.0.0.1"] + (os.getenv("ALLOWED_HOSTS").split(",") if os.getenv("ALLOWED_HOSTS") else [])
+ALLOWED_HOSTS = ["localhost","127.0.0.1"] + (os.getenv("ALLOWED_HOSTS","").split(",") if os.getenv("ALLOWED_HOSTS") else [])
 
 # Application definition
 
@@ -38,10 +38,14 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'auth_manager',
+    'apps.auth_manager',
     'django_jinja',
     'tailwind',
     'theme',
+    'apps.document',
+    'apps.graph',
+    'apps.llm',
+    'apps.extraction',
 ]
 
 MIDDLEWARE = [
@@ -138,10 +142,6 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_COOKIE_AGE = 60 * 60 * 60
 AUTH_USER_MODEL = "auth_manager.User"
 
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-
-
-
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
@@ -164,3 +164,13 @@ LOG_DIR = BASE_DIR / "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
 
 LOGIN_URL = '/auth/login/'
+
+#Memgraph
+MG_HOST= os.getenv("MG_HOST","localhost")
+MG_PORT = os.getenv("MG_PORT","7687")
+
+# LLM
+LLM_PROVIDER = os.getenv("LLM_PROVIDER","OPENAI")
+OPEN_AI_KEY = os.getenv("OPEN_AI_KEY","")
+OLLAMA_HOST = "localhost"
+OLLAMA_PORT = "11434"

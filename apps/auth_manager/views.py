@@ -1,7 +1,7 @@
 import traceback
 from django.shortcuts import render,redirect
 
-from auth_manager.utilities.authenticated_redirector import redirect_authenticated
+from apps.auth_manager.utilities.authenticated_redirector import redirect_authenticated
 
 from .forms import LoginForm,SignupForm
 from django.contrib.auth import authenticate, login, logout
