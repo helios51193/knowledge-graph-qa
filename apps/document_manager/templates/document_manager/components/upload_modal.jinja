@@ -1,0 +1,48 @@
+<dialog id="upload-modal" class="modal modal-open">
+
+    <div class="modal-box">
+
+        <h3 class="font-bold text-lg mb-6">
+            Upload Document
+        </h3>
+
+        <form
+            hx-post="/documents/upload"
+            hx-swap="none"
+            hx-on::after-request="document.getElementById('upload-modal').remove()"
+            enctype="multipart/form-data"
+        >
+
+            <fieldset class="fieldset">
+                <legend class="fieldset-legend">Document Name</legend>
+                {{form.name}}
+
+                <legend class="fieldset-legend">Select File (.pdf, .md, .txt)</legend>
+                {{form.file}}
+
+                <legend class="fieldset-legend">Select LLM to use</legend>
+                {{form.llm_used}}
+
+
+            </fieldset>
+            <div class="modal-action">
+
+                <button type="submit" class="btn btn-primary">
+                    Upload
+                </button>
+
+                <button
+                    type="button"
+                    class="btn"
+                    onclick="document.getElementById('upload-modal').remove()"
+                >
+                    Cancel
+                </button>
+
+            </div>
+
+        </form>
+
+    </div>
+
+</dialog>

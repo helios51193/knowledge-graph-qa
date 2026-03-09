@@ -1,0 +1,53 @@
+{% extends "document_manager/base.jinja" %}
+
+
+{% block title %}
+Dashboard
+{% endblock %}
+
+
+{% block content %}
+
+<div class="flex justify-between items-center mb-8">
+
+    <div>
+
+        <h1 class="text-3xl font-bold">
+            Documents
+        </h1>
+
+        <p class="text-sm opacity-70">
+            Manage and explore your knowledge graph documents
+        </p>
+
+    </div>
+
+
+    <button
+        class="btn btn-primary"
+        hx-get="{{url('document_manager:upload_document')}}"
+        hx-target="#modal-container"
+        hx-swap="innerHTML"
+    >
+        Upload Document
+    </button>
+
+</div>
+
+
+<!-- Document table -->
+
+<div
+    id="document-table-container"
+    hx-get="{{url('document_manager:document_table')}}"
+    hx-trigger="load"
+    hx-swap="innerHTML"
+>
+</div>
+
+
+<!-- Modal target -->
+
+<div id="modal-container"></div>
+
+{% endblock %}

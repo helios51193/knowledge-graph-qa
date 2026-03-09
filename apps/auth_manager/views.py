@@ -7,7 +7,9 @@ from .forms import LoginForm,SignupForm
 from django.contrib.auth import authenticate, login, logout
 # Create your views here.
 
-@redirect_authenticated(to='dashboard:dashboard_index')
+
+
+@redirect_authenticated(to='document_manager:dashboard')
 def user_login(request):
 
     form = LoginForm()
@@ -28,7 +30,7 @@ def user_login(request):
                 if user is not None:
                     print("Authenticated")
                     login(request,user)
-                    return redirect('dashboard:dashboard_index')
+                    return redirect('document_manager:dashboard')
                 else:
                     context['has_errors'] = True
                     context['errors'] = ['Invalid email and/or password']

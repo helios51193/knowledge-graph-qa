@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <title>
+        {% block title %}Knowledge Graph Platform{% endblock %}
+    </title>
+
+    <link rel="stylesheet" href="{{ static('css/dist/styles.css') }}">
+
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+</head>
+
+
+<body class="bg-base-200 min-h-screen">
+
+    <!-- Navbar -->
+
+    <div class="navbar bg-base-100 shadow">
+
+        <div class="flex-1">
+
+            <a class="btn btn-ghost text-xl">
+                Knowledge Graph
+            </a>
+
+        </div>
+
+
+        <div class="flex-none gap-4">
+
+            <span class="text-sm opacity-70">
+                {{ request.user.email }}
+            </span>
+
+            <a href="/logout" class="btn btn-outline btn-sm">
+                Logout
+            </a>
+
+        </div>
+
+    </div>
+
+
+    <!-- Main container -->
+
+    <div class="max-w-6xl mx-auto p-8">
+
+        {% block content %}
+        {% endblock %}
+
+    </div>
+
+
+    <!-- HTMX CSRF -->
+
+    <script>
+    document.body.addEventListener('htmx:configRequest', (event) => {
+        event.detail.headers['X-CSRFToken'] = '{{ csrf_token }}'
+    })
+    </script>
+
+
+</body>
+
+</html>
