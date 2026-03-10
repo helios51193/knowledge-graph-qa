@@ -1,31 +1,28 @@
 from django import forms
+from .models import Document
 
-class DocumentUploadForm(forms.Form):
+class DocumentUploadForm(forms.ModelForm):
 
-    name = forms.CharField(
-        label="Document Name",
-        widget=forms.TextInput(attrs={
-            "class": "input",
-            "placeholder": "Enter document name"
-        })
-    )
+    class Meta:
+        model = Document
+        fields = [
+            "name",
+            "file",
+            "llm_used"
+        ]
 
-    file = forms.FileField(
-        label="Upload File",
-        widget=forms.ClearableFileInput(attrs={
-            "class": "file-input",
-            "accept": ".pdf,.txt"
-        })
-    )
+        widgets = {
+            "name": forms.TextInput(attrs={
+                "class": "input",
+                "placeholder": "Enter document name"
+            }),
 
-    llm_used = forms.ChoiceField(
-        label="LLM Model",
-        choices=[
-            ("llama3", "Llama 3"),
-            ("mistral", "Mistral"),
-            ("gpt4", "GPT-4")
-        ],
-        widget=forms.Select(attrs={
-            "class": "select"
-        })
-    )
+            "file": forms.ClearableFileInput(attrs={
+                "class": "file-input"
+            }),
+
+            "llm_used": forms.Select(attrs={
+                "class": "select"
+            }),
+        }
+

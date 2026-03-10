@@ -40,7 +40,7 @@ Dashboard
 <div
     id="document-table-container"
     hx-get="{{url('document_manager:document_table')}}"
-    hx-trigger="load"
+    hx-trigger="load, documentsUpdated from:body"
     hx-swap="innerHTML"
 >
 </div>
@@ -49,5 +49,14 @@ Dashboard
 <!-- Modal target -->
 
 <div id="modal-container"></div>
+
+<script>
+
+document.body.addEventListener("closeUploadModal", function () {
+    const modal = document.getElementById("upload-modal")
+    if (modal) { modal.remove()}
+})
+
+</script>
 
 {% endblock %}

@@ -1,0 +1,1 @@
+celery -A knowledge_graph worker -l info -P solo

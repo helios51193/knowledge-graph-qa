@@ -170,3 +170,8 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER","OPENAI")
 OPEN_AI_KEY = os.getenv("OPEN_AI_KEY","")
 OLLAMA_HOST = "localhost"
 OLLAMA_PORT = "11434"
+
+# Celery
+BROKER_HOST= os.getenv("CELERY_BROKER_HOST","localhost")
+CELERY_BROKER_URL = f"redis://{BROKER_HOST}:6379/0"
+CELERY_RESULT_BACKEND = f"redis://{BROKER_HOST}:6379/0"

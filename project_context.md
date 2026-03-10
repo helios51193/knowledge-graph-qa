@@ -139,128 +139,291 @@ Tailwind builds its compiled CSS into this directory.
 
 # Document Manager
 
-A dedicated Django app called `document_manager` manages documents uploaded to the platform.
+The `document_manager` app is responsible for managing documents uploaded by users and preparing them for knowledge graph generation.
 
-Each uploaded document represents a dataset that will later be converted into a knowledge graph.
+Each uploaded document represents a dataset that can be converted into a knowledge graph and inserted into Memgraph.
 
-Documents are **user scoped**, meaning each user can only access and manage their own documents.
+The app handles:
 
----
+* document upload
+* document storage
+* processing status tracking
+* triggering graph extraction
+* background processing using Celery
+* storing intermediate graph representations
 
-## Responsibilities
-
-The `document_manager` app is responsible for:
-
-* storing uploaded documents
-* tracking metadata about generated graphs
-* displaying document dashboards
-* providing document upload functionality
+Documents are scoped to users so each user only sees and manages their own documents.
 
 ---
 
 # Document Model
 
-Each uploaded document is stored in the database.
+Each document is stored in the database and linked to a user.
 
-Documents are linked to users through a ForeignKey relationship.
+The model tracks both metadata and graph generation status.
 
 Fields include:
 
 * user — owner of the document
 * name — document name
 * file — uploaded document file
-* nodes — number of nodes created in the graph
-* edges — number of edges created in the graph
-* relations — number of unique relation types
-* llm_used — LLM used for extraction
-* processing_time — time taken to generate the graph
-* status — processing status (pending / processing / completed)
+* llm_used — LLM used for graph extraction
+* status — processing status of the document
+* nodes — number of nodes generated
+* edges — number of edges generated
+* relations — number of relation types generated
+* processing_time — time taken to process the document
+* error_message — error message if processing fails
+* graph_data — intermediate graph representation stored as JSON
 * created_at — upload timestamp
 
-This metadata helps track the graph creation process for each document.
+---
+
+# LLM Selection
+
+Documents require an LLM to process the text and extract entities and relationships.
+
+Available LLM choices currently include:
+
+* Llama 3
+* Mistral
+* GPT-4
+
+A placeholder option **“Select LLM”** is displayed in the upload form.
+
+---
+
+# Document Status Lifecycle
+
+Each document moves through a processing lifecycle.
+
+Possible states include:
+
+pending
+The document has been uploaded but not yet processed.
+
+processing
+A background task is currently generating the knowledge graph.
+
+complete
+The graph was successfully generated.
+
+error
+Processing failed and an error message is recorded.
 
 ---
 
 # Document Dashboard
 
-The first screen of the platform is a **Document Dashboard**.
+The dashboard displays all documents belonging to the currently logged-in user.
 
-This page displays all documents uploaded by the currently logged-in user.
-
-The dashboard shows metadata about the knowledge graphs generated from each document.
-
-Displayed columns include:
+Information shown for each document includes:
 
 * document name
 * number of nodes
 * number of edges
 * number of relations
-* LLM used
-* processing time
+* selected LLM
+* processing status
 
-Documents are filtered by the currently authenticated user to ensure user isolation.
-
----
-
-# Upload Document Feature
-
-Users can upload documents from the dashboard.
-
-The dashboard includes an **Upload Document** button.
-
-Clicking the button opens a modal containing the upload form.
+The dashboard is implemented using **Jinja templates with HTMX components**.
 
 ---
 
-# Document Upload Form
+# Frontend Architecture
 
-The upload form collects the following information:
+Templates follow a component-based structure.
+
+```
+templates/
+    base.jinja
+    dashboard.jinja
+
+    document_manager/
+        components/
+            document_table.jinja
+            upload_modal.jinja
+```
+
+### base.jinja
+
+Provides the global layout including:
+
+* navigation bar
+* static CSS
+* HTMX initialization
+* CSRF header injection
+
+---
+
+### dashboard.jinja
+
+Extends the base template and loads dashboard components.
+
+The document table is loaded dynamically using HTMX.
+
+```
+hx-get="/documents/table"
+hx-trigger="load"
+```
+
+This ensures the dashboard always displays fresh data.
+
+---
+
+### document_table.jinja
+
+Displays all documents in a table format.
+
+Columns include:
 
 * document name
-* file to upload
-* LLM model used
+* node count
+* edge count
+* relation count
+* LLM used
+* processing status
+* actions
 
-Inputs follow the project's UI conventions using DaisyUI classes:
-
-```
-input input-bordered w-full
-select select-bordered w-full
-file-input file-input-bordered w-full
-```
-
-These classes ensure consistent styling with the login form and other platform components.
+Status indicators are rendered using DaisyUI badges and progress components.
 
 ---
 
-# Upload Modal
+### upload_modal.jinja
 
-The upload form appears inside a modal window.
+The upload modal allows users to upload new documents without leaving the dashboard.
 
-The modal allows users to upload documents without leaving the dashboard page.
+The form includes:
 
-This approach improves the user experience and keeps the interface responsive.
+* document name
+* file upload
+* LLM selection
+
+Submission is handled using HTMX.
 
 ---
 
-# Document Processing Pipeline (Planned)
+# Upload Flow
 
-After a document is uploaded, the system will process it to generate a knowledge graph.
+The document upload flow works as follows.
 
-The planned processing pipeline:
+User opens upload modal
+↓
+User submits upload form
+↓
+Server saves document metadata
+↓
+Server sends HX trigger events
+↓
+Dashboard refreshes document table
+↓
+Modal closes automatically
+
+HTMX triggers are used to keep components loosely coupled.
+
+---
+
+# Document Actions
+
+Each document row includes an **Actions column**.
+
+Two operations are available.
+
+### Process
+
+Starts graph generation for the document.
+
+When clicked:
+
+* the document status changes to **processing**
+* a Celery task is started
+* the dashboard refreshes automatically
+
+---
+
+### Delete
+
+Deletes the document and removes it from the dashboard.
+
+---
+
+# Background Processing with Celery
+
+Document processing runs asynchronously using Celery.
+
+The workflow is:
+
+User clicks Process
+↓
+Django view triggers Celery task
+↓
+Celery worker processes the document
+↓
+Graph representation is generated
+↓
+Document status updated in database
+
+The Celery worker automatically discovers tasks defined in the application.
+
+---
+
+# Graph Representation Storage
+
+Before inserting data into Memgraph, documents are converted into a graph-friendly structure.
+
+The intermediate representation is stored in the `graph_data` field.
+
+Example structure:
+
+```
+{
+  "nodes": [
+    {"label": "Person", "name": "Alice"},
+    {"label": "Company", "name": "OpenAI"}
+  ],
+  "edges": [
+    {"source": "Alice", "target": "OpenAI", "type": "WORKS_AT"}
+  ]
+}
+```
+
+This structure can later be converted into Cypher queries.
+
+---
+
+# Future Processing Pipeline
+
+The document processing pipeline will eventually include:
 
 Document Upload
 ↓
-Text Chunking
+Text extraction
 ↓
-Entity Extraction (LLM)
+Text chunking
 ↓
-Relationship Extraction (LLM)
+Entity extraction using LLM
 ↓
-Cypher Generation
+Relationship extraction using LLM
 ↓
-Graph Storage in Memgraph
+Graph structure generation
+↓
+Cypher generation
+↓
+Insertion into Memgraph
 
-Graph generation tasks will run asynchronously using Celery workers.
+---
+
+# Design Goals
+
+The document manager is designed to support:
+
+* asynchronous document processing
+* modular graph generation pipelines
+* scalable graph ingestion
+* user-scoped datasets
+
+The system will eventually serve as the ingestion layer for the knowledge graph QA engine.
+
 
 ---
 
