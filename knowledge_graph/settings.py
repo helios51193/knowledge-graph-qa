@@ -42,8 +42,7 @@ INSTALLED_APPS = [
     'django_jinja',
     'tailwind',
     'theme',
-    'apps.graph_manager',
-    'apps.document_manager'
+    'apps.document_manager',
 ]
 
 MIDDLEWARE = [

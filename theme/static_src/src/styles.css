@@ -9,3 +9,22 @@
   * the scope of this path.
   */
 @source "../../../**/*.{html,js,jinja}";
+
+/* Safelist classes used in Django forms */
+@source inline("input");
+@source inline("input-bordered");
+@source inline("file-input");
+@source inline("file-input-bordered");
+@source inline("select");
+@source inline("select-bordered");
+@source inline("btn");
+@source inline("btn-primary");
+@source inline("btn-error");
+
+/* Status indicators */
+@source inline("badge");
+@source inline("badge-warning");
+@source inline("badge-success");
+@source inline("badge-error");
+@source inline("progress");
+@source inline("progress-primary");

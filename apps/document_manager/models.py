@@ -44,7 +44,7 @@ class Document(models.Model):
     relations = models.IntegerField(default=0)
 
     llm_used = models.CharField(max_length=100, choices=LLM_CHOICES, blank=False)
-
+    progress = models.IntegerField(default=0)
     processing_time = models.FloatField(null=True, blank=True)
     error_message = models.TextField(blank=True)
     status = models.CharField(
@@ -58,3 +58,23 @@ class Document(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.user})"
+
+class ProcessingLog(models.Model):
+
+    document = models.ForeignKey(
+        "Document",
+        on_delete=models.CASCADE,
+        related_name="processing_logs"
+    )
+
+    stage = models.CharField(max_length=100)
+
+    message = models.TextField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.document.id} - {self.stage}"
+    
+    class Meta:
+        ordering = ["created_at"]
