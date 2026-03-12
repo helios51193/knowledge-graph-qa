@@ -1,14 +1,30 @@
 # Knowledge Graph QA System – Project Context
 
-## Overview
+## Purpose of this Document
 
-This project is a knowledge graph question-answering platform built using Django and Memgraph.
+This document provides a complete description of the system architecture, modules, and data processing pipeline for the Knowledge Graph QA System.
 
-Users can upload documents to the platform. Each document is processed to extract entities and relationships, which are then stored as a knowledge graph.
+The goal of this document is to ensure that a developer or autonomous agent can understand:
 
-Users can ask natural language questions about the knowledge graph. A Large Language Model (LLM) converts the question into a Cypher query, executes it on the graph database, and generates a natural language response.
+- the system architecture
+- responsibilities of each module
+- the document ingestion pipeline
+- how the graph is generated
+- how components interact
 
-The system demonstrates a **Graph-RAG architecture** combining knowledge graphs with LLM reasoning.
+The document prioritizes **clarity and completeness over presentation**.
+
+---
+
+# System Overview
+
+This project is a **knowledge graph question-answering platform** built with Django and Memgraph.
+
+The system allows users to upload documents. These documents are processed into a **knowledge graph** by extracting entities and relationships from the text.
+
+Users can then ask **natural language questions** about the graph. The system converts the question into a **Cypher query**, executes it against Memgraph, and returns a natural language answer.
+
+The system demonstrates a **Graph-RAG architecture**, where structured graph data is used together with LLM reasoning.
 
 ---
 
@@ -16,366 +32,389 @@ The system demonstrates a **Graph-RAG architecture** combining knowledge graphs 
 
 ## Backend
 
-* Django
-* Python
+- Python
+- Django
 
 ## Frontend
 
-* Jinja templates via `django-jinja`
-* Tailwind CSS
-* DaisyUI
-* HTMX
-* Alpine.js
+- Jinja templates via `django-jinja`
+- HTMX
+- Alpine.js
+- Tailwind CSS
+- DaisyUI
 
 ## Graph Database
 
-* Memgraph
-* Cypher query language
+- Memgraph
+- Cypher query language
 
-## AI Layer (Planned)
+## AI Layer
 
-* LLM integration (OpenAI or Ollama)
+Planned LLM providers:
 
-## Async Processing (Planned)
+- GPT-4
+- Llama 3
+- Mistral
 
-* Celery
+## Background Processing
+
+- Celery
+- Redis (broker)
 
 ---
 
 # Project Structure
 
-All Django applications are placed inside an `apps/` directory to keep the project modular.
+All Django apps are located inside the `apps` directory.
+- apps/
+  - auth_manager/
+  - document_manager/
 
-Example structure:
-
-```
-apps/
-    auth_manager/
-    document_manager/
-```
-
-Each application is responsible for a specific domain of the platform.
+Each app encapsulates a specific domain of the system.
 
 ---
 
 # Authentication System
 
-Authentication is handled through a dedicated Django app called `auth_manager`.
+The `auth_manager` application manages authentication.
 
-## Responsibilities
+Responsibilities:
 
-The `auth_manager` app manages user authentication features including:
+- user login
+- user logout
+- session management
+- authentication templates
 
-* user login
-* user logout
-* session management
-* authentication templates
-
-The app isolates authentication logic from the rest of the system to maintain modular architecture.
+Authentication logic is isolated so other apps remain independent.
 
 ---
 
-## Login Form
+# Template System
 
-The login form is implemented using Django forms and styled using Tailwind and DaisyUI.
+The system uses **Jinja templates** through `django-jinja`.
 
-Form fields:
+This replaces Django’s default template engine.
 
-* email
-* password
+Benefits:
 
-Inputs use consistent UI classes:
-
-```
-input input-bordered w-full
-```
-
-This styling pattern is reused throughout the platform for consistency.
-
----
-
-# Template Engine
-
-The project uses **Jinja templates** via the `django-jinja` package instead of Django’s default template engine.
-
-This allows a more flexible templating syntax and better control over template rendering.
-
----
-
-# Styling
-
-Frontend styling uses:
-
-* Tailwind CSS
-* DaisyUI
-
-Tailwind integration is handled using `django-tailwind`.
-
-DaisyUI provides pre-built UI components such as:
-
-* inputs
-* buttons
-* tables
-* modals
-* forms
-
----
-
-# Static Files
-
-A centralized static directory is used for compiled assets.
-
-Example structure:
-
-```
-static/
-    css/
-        generated.css
-```
-
-Tailwind builds its compiled CSS into this directory.
-
----
-
-# Document Manager
-
-The `document_manager` app is responsible for managing documents uploaded by users and preparing them for knowledge graph generation.
-
-Each uploaded document represents a dataset that can be converted into a knowledge graph and inserted into Memgraph.
-
-The app handles:
-
-* document upload
-* document storage
-* processing status tracking
-* triggering graph extraction
-* background processing using Celery
-* storing intermediate graph representations
-
-Documents are scoped to users so each user only sees and manages their own documents.
-
----
-
-# Document Model
-
-Each document is stored in the database and linked to a user.
-
-The model tracks both metadata and graph generation status.
-
-Fields include:
-
-* user — owner of the document
-* name — document name
-* file — uploaded document file
-* llm_used — LLM used for graph extraction
-* status — processing status of the document
-* nodes — number of nodes generated
-* edges — number of edges generated
-* relations — number of relation types generated
-* processing_time — time taken to process the document
-* error_message — error message if processing fails
-* graph_data — intermediate graph representation stored as JSON
-* created_at — upload timestamp
-
----
-
-# LLM Selection
-
-Documents require an LLM to process the text and extract entities and relationships.
-
-Available LLM choices currently include:
-
-* Llama 3
-* Mistral
-* GPT-4
-
-A placeholder option **“Select LLM”** is displayed in the upload form.
-
----
-
-# Document Status Lifecycle
-
-Each document moves through a processing lifecycle.
-
-Possible states include:
-
-pending
-The document has been uploaded but not yet processed.
-
-processing
-A background task is currently generating the knowledge graph.
-
-complete
-The graph was successfully generated.
-
-error
-Processing failed and an error message is recorded.
-
----
-
-# Document Dashboard
-
-The dashboard displays all documents belonging to the currently logged-in user.
-
-Information shown for each document includes:
-
-* document name
-* number of nodes
-* number of edges
-* number of relations
-* selected LLM
-* processing status
-
-The dashboard is implemented using **Jinja templates with HTMX components**.
+- more expressive template syntax
+- better control over rendering
+- easier component reuse
 
 ---
 
 # Frontend Architecture
 
-Templates follow a component-based structure.
+Frontend uses server-rendered templates enhanced with HTMX.
 
-```
+Technologies used:
+
+- Tailwind CSS
+- DaisyUI
+- HTMX
+- Alpine.js
+
+Templates are organized as reusable components.
+
+Example structure:
+
 templates/
-    base.jinja
-    dashboard.jinja
-
-    document_manager/
-        components/
-            document_table.jinja
-            upload_modal.jinja
-```
-
-### base.jinja
-
-Provides the global layout including:
-
-* navigation bar
-* static CSS
-* HTMX initialization
-* CSRF header injection
+ - document_manager
+    - base.jinja
+    - dashboard.jinja 
+    - components/
+      - document_table.jinja
+      - upload_modal.jinja
 
 ---
 
-### dashboard.jinja
+# Static Files
 
-Extends the base template and loads dashboard components.
+Compiled frontend assets are stored in a centralized static directory.
 
-The document table is loaded dynamically using HTMX.
+Example:
+- static/
+  - css/
+    - styles.css
 
-```
-hx-get="/documents/table"
+Tailwind compiles CSS into this directory.
+
+---
+
+# Document Manager
+
+The `document_manager` app is responsible for handling uploaded documents and converting them into knowledge graphs.
+
+Responsibilities include:
+
+- document upload
+- file storage
+- document metadata management
+- tracking processing state
+- running background processing tasks
+- generating graph-ready data
+- storing intermediate graph structures
+
+Documents are **scoped to users**, meaning each user only sees their own documents.
+
+---
+
+# Document Model
+
+Each uploaded document is stored in the database.
+
+Fields include:
+
+- `user` — owner of the document
+- `name` — document name
+- `file` — uploaded file
+- `llm_used` — LLM selected for extraction
+- `status` — processing state
+- `nodes` — number of nodes generated
+- `edges` — number of edges generated
+- `relations` — number of relation types
+- `processing_time` — time taken for processing
+- `error_message` — error message if processing fails
+- `graph_data` — intermediate graph structure (JSON)
+- `created_at` — upload timestamp
+
+---
+
+# Document Status Lifecycle
+
+Documents move through several states during processing.
+
+Possible values:
+ - pending
+ - processing
+ - complete
+ - error
+
+Descriptions:
+
+**pending**  
+Document uploaded but not yet processed.
+
+**processing**  
+Celery worker is currently processing the document.
+
+**complete**  
+Graph generation finished successfully.
+
+**error**  
+Processing failed and an error message is stored.
+
+---
+
+# Processing Logs
+
+Each stage of the processing pipeline produces log entries.
+
+Logs are stored in a `ProcessingLog` model.
+
+Each log entry contains:
+
+- document reference
+- processing stage
+- message
+- timestamp
+
+Example stages:
+  - START
+  - TEXT_EXTRACTION
+  - NORMALIZATION
+  - CHUNKING
+  - COMPLETE
+  - ERROR
+
+
+These logs provide traceability and debugging information for asynchronous tasks.
+
+---
+
+# Document Dashboard
+
+The dashboard shows all documents belonging to the logged-in user.
+
+Displayed information:
+
+- document name
+- number of nodes
+- number of edges
+- number of relations
+- selected LLM
+- processing status
+
+The dashboard loads document data dynamically using HTMX.
+
+Example:
+hx-get={{document_manager:document_list}}
 hx-trigger="load"
-```
 
-This ensures the dashboard always displays fresh data.
 
 ---
 
-### document_table.jinja
+# Document Upload Flow
 
-Displays all documents in a table format.
-
-Columns include:
-
-* document name
-* node count
-* edge count
-* relation count
-* LLM used
-* processing status
-* actions
-
-Status indicators are rendered using DaisyUI badges and progress components.
-
----
-
-### upload_modal.jinja
-
-The upload modal allows users to upload new documents without leaving the dashboard.
-
-The form includes:
-
-* document name
-* file upload
-* LLM selection
-
-Submission is handled using HTMX.
-
----
-
-# Upload Flow
-
-The document upload flow works as follows.
-
+The upload process works as follows.
 User opens upload modal
 ↓
-User submits upload form
+User submits form
 ↓
-Server saves document metadata
+Server stores file and metadata
 ↓
-Server sends HX trigger events
+Dashboard refreshes document list
 ↓
-Dashboard refreshes document table
-↓
-Modal closes automatically
+User can start processing
 
-HTMX triggers are used to keep components loosely coupled.
+Upload is handled using HTMX forms.
 
 ---
 
-# Document Actions
+# Background Processing
 
-Each document row includes an **Actions column**.
+Document processing is performed asynchronously using Celery.
 
-Two operations are available.
-
-### Process
-
-Starts graph generation for the document.
-
-When clicked:
-
-* the document status changes to **processing**
-* a Celery task is started
-* the dashboard refreshes automatically
-
----
-
-### Delete
-
-Deletes the document and removes it from the dashboard.
-
----
-
-# Background Processing with Celery
-
-Document processing runs asynchronously using Celery.
-
-The workflow is:
-
+Workflow:
 User clicks Process
 ↓
 Django view triggers Celery task
 ↓
-Celery worker processes the document
+Celery worker executes pipeline
 ↓
-Graph representation is generated
+Graph representation generated
 ↓
-Document status updated in database
+Document status updated
 
-The Celery worker automatically discovers tasks defined in the application.
+
+This prevents long-running tasks from blocking HTTP requests.
 
 ---
 
-# Graph Representation Storage
+# Document Processing Pipeline
 
-Before inserting data into Memgraph, documents are converted into a graph-friendly structure.
+Uploaded documents are processed through a structured pipeline.
 
-The intermediate representation is stored in the `graph_data` field.
+Document Upload
+↓
+Text Extraction
+↓
+Text Normalization
+↓
+Text Chunking
+↓
+Chunk Metadata Generation
+↓
+Entity Extraction (LLM)
+↓
+Relationship Extraction (LLM)
+↓
+Graph Structure Generation
+↓
+Cypher Generation
+↓
+Insertion into Memgraph
+
+Each stage is implemented as a **separate module**.
+
+---
+
+# Text Extraction
+
+The text extraction stage converts files into raw text.
+
+Currently supported formats:
+
+ - pdf
+ - txt
+ - md
+
+Extraction uses a **pluggable extractor system**.
+
+Example extractors:
+
+  - PdfExtractor
+  - TxtExtractor
+  - MarkdownExtractor
+
+The correct extractor is selected automatically based on file extension.
+
+---
+
+# Text Normalization
+
+Extracted text is cleaned before further processing.
+
+Normalization performs:
+
+- unicode normalization
+- whitespace normalization
+- removal of repeated blank lines
+- correction of PDF line breaks
+
+Example issue:
+
+Artificial intelligence is transforming
+the world.
+
+
+Normalized result:
+
+
+Artificial intelligence is transforming the world.
+
+
+---
+
+# Text Chunking
+
+Normalized text is split into smaller segments called **chunks**.
+
+Chunking is required because LLMs cannot process extremely long text.
+
+Supported chunking strategies:
+
+- word
+- sentence
+- paragraph
+
+The chunking strategy is configurable via Django settings.
+
+Example configuration:
+
+DOCUMENT_CHUNKER = "word"
+CHUNK_SIZE = 200
+CHUNK_OVERLAP = 20
+
+---
+
+# Chunk Metadata
+
+Each chunk includes metadata describing its origin.
+
+Chunk structure:
+chunk_id
+document_id
+text
+start_index
+end_index
+
+Metadata enables:
+
+- tracing extracted entities to source text
+- debugging extraction results
+- supporting future retrieval features
+
+Chunks are passed to the LLM extraction stage.
+
+---
+
+# Graph Representation (Future Module)
+
+Before inserting data into Memgraph, the extracted entities and relationships are converted into a graph representation.
 
 Example structure:
-
-```
+`
 {
   "nodes": [
     {"label": "Person", "name": "Alice"},
@@ -385,85 +424,45 @@ Example structure:
     {"source": "Alice", "target": "OpenAI", "type": "WORKS_AT"}
   ]
 }
-```
-
-This structure can later be converted into Cypher queries.
-
----
-
-# Future Processing Pipeline
-
-The document processing pipeline will eventually include:
-
-Document Upload
-↓
-Text extraction
-↓
-Text chunking
-↓
-Entity extraction using LLM
-↓
-Relationship extraction using LLM
-↓
-Graph structure generation
-↓
-Cypher generation
-↓
-Insertion into Memgraph
+`
+This intermediate structure is stored in the `graph_data` field.
 
 ---
 
-# Design Goals
+# Graph Manager (Future Module)
 
-The document manager is designed to support:
+The graph manager will handle all interaction with Memgraph.
 
-* asynchronous document processing
-* modular graph generation pipelines
-* scalable graph ingestion
-* user-scoped datasets
+Responsibilities:
 
-The system will eventually serve as the ingestion layer for the knowledge graph QA engine.
-
-
----
-
-# Future Modules
-
-The following modules will be implemented later in the project.
-
-## Graph Manager
-
-Responsible for interaction with the graph database.
-
-Responsibilities include:
-
-* Memgraph connection
-* Cypher query execution
-* graph schema inspection
+- database connection
+- Cypher query execution
+- schema inspection
+- graph updates
 
 ---
 
-## QA Engine
+# QA Engine (Future Module)
 
-Handles the natural language question answering pipeline.
+The QA engine will handle natural language questions.
 
-Responsibilities include:
+Responsibilities:
 
-* converting user questions into Cypher queries
-* executing graph queries
-* generating natural language responses
+- convert user question into Cypher query
+- execute query on graph database
+- generate natural language response
 
 ---
 
 # Long-Term Goals
 
-This project aims to demonstrate practical experience in:
+The system is designed to demonstrate practical experience in:
 
-* knowledge graph engineering
-* graph database integration
-* Graph-RAG architecture
-* LLM prompt engineering
-* backend system design
-* modular Django architecture
+- knowledge graph engineering
+- graph database integration
+- Graph-RAG architectures
+- LLM pipeline design
+- backend system architecture
+- modular Django application design
 
 The final system should function as a lightweight platform for building and querying knowledge graphs using natural language.

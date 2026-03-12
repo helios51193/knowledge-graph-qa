@@ -13,7 +13,7 @@ def process_document(document_id):
     start = timezone.now()
     try:
 
-        result = process_document_pipeline()
+        result = process_document_pipeline(document)
 
         graph_data = {
             "nodes": [
