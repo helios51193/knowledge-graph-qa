@@ -1,0 +1,1 @@
+from .factory import get_relation_extractor

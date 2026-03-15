@@ -1,4 +1,6 @@
 from celery import shared_task
+
+from .services.graph_database import save_graph_to_database
 from .models import Document
 from django.utils import timezone
 from .services.process_document_pipeline import process_document_pipeline
@@ -15,20 +17,22 @@ def process_document(document_id):
 
         result = process_document_pipeline(document)
 
-        graph_data = {
-            "nodes": [
-                {"label": "Entity", "name": "Example"}
-            ],
-            "edges": []
-        }
+        graph_data = result['graph']
 
         document.graph_data = graph_data
-        document.nodes = len(graph_data["nodes"])
-        document.edges = len(graph_data["edges"])
+        document.nodes =  graph_data["counts"]["nodes"]
+        document.edges = graph_data["counts"]["edges"]
+        document.relations = graph_data["counts"]["relation_types"]
+
+        log_stage(document, "GRAPH_BUILDING", "Graph data prepared")
+
+        save_graph_to_database(document, graph_data)
+        log_stage(document, "GRAPH_DATABASE", "Graph saved to Memgraph")
 
         document.status = Document.STATUS_COMPLETE
-
+        document.error_message = ""
         document.save()
+        
         log_stage(document, "COMPLETE", "Processing finished successfully")
 
     except Exception as e:
