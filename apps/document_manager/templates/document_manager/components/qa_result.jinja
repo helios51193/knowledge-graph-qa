@@ -1,0 +1,29 @@
+<div class="mt-6">
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
+        <div class="card-body">
+            <h3 class="card-title">Answer</h3>
+
+            {% if has_error %}
+                <div class="alert alert-error">
+                    <span>{{ answer }}</span>
+                </div>
+            {% else %}
+                <p class="leading-7">{{ answer }}</p>
+            {% endif %}
+
+            {% if cypher %}
+                <div class="mt-4">
+                    <h4 class="font-semibold mb-2">Generated Cypher</h4>
+                    <pre class="p-4 rounded bg-base-200 text-sm overflow-x-auto">{{ cypher }}</pre>
+                </div>
+            {% endif %}
+
+            {% if rows %}
+                <div class="mt-4">
+                    <h4 class="font-semibold mb-2">Query Result</h4>
+                    <pre class="p-4 rounded bg-base-200 text-sm overflow-x-auto">{{ rows }}</pre>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>

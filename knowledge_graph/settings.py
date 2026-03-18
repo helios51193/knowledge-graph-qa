@@ -199,3 +199,7 @@ RELATION_LLM_TIMEOUT = 90
 
 # GRAPH
 CLEAR_GRAPH_BEFORE_INSERT = True
+
+# QA
+QA_LLM_TEMPERATURE = 0
+QA_ANSWER_STYLE = "natural and conversational" #"storylike"

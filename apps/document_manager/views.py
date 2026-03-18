@@ -2,10 +2,11 @@ import json
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from .models import Document
 from .forms import DocumentUploadForm
 from .tasks import process_document
+from .services.qa.qa_engine import QAEngine
 
 
 @login_required
@@ -88,5 +89,51 @@ def delete_document(request, doc_id):
     })
 
     return response
+
+@login_required
+def ask_question(request, doc_id):
+
+    document = get_object_or_404(Document, id=doc_id, user=request.user)
+
+    question = request.POST.get("question", "").strip()
+
+    if not question:
+        context = {
+                "document": document,
+                "question": question,
+                "answer": "Please enter a question.",
+                "cypher": "",
+                "rows": [],
+                "has_error": True,
+            }
+        return render(request, "document_manager/components/qa_result.jinja", context=context)
+
+
+    try:
+        qa_engine = QAEngine()
+        result = qa_engine.answer_question(document, question)
+
+        context ={
+                "document": document,
+                "question": result["question"],
+                "answer": result["answer"],
+                "cypher": result["cypher"],
+                "rows": result["rows"],
+                "has_error": False,
+            }
+        
+        return render(request, "document_manager/components/qa_result.jinja", context=context)
+    except Exception as e:
+        context = {
+                "document": document,
+                "question": question,
+                "answer": str(e),
+                "cypher": "",
+                "rows": [],
+                "has_error": True,
+            }
+        
+        return render(request, "document_manager/components/qa_result.jinja", context=context)
+        
 
 

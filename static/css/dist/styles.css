@@ -1159,6 +1159,97 @@
     }
   }
   @layer daisyui.l1.l2.l3 {
+    .textarea {
+      border: var(--border) solid #0000;
+      min-height: calc(0.25rem * 20);
+      flex-shrink: 1;
+      appearance: none;
+      border-radius: var(--radius-field);
+      background-color: var(--color-base-100);
+      padding-block: calc(0.25rem * 2);
+      vertical-align: middle;
+      width: clamp(3rem, 20rem, 100%);
+      padding-inline-start: 0.75rem;
+      padding-inline-end: 0.75rem;
+      font-size: max(var(--font-size, 0.875rem), 0.875rem);
+      touch-action: manipulation;
+      border-color: var(--input-color);
+      box-shadow: 0 1px var(--input-color) inset, 0 -1px oklch(100% 0 0 / calc(var(--depth) * 0.1)) inset;
+      --input-color: var(--color-base-content);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea {
+        box-shadow: 0 1px color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000) inset, 0 -1px oklch(100% 0 0 / calc(var(--depth) * 0.1)) inset;
+      }
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea {
+        --input-color: color-mix(in oklab, var(--color-base-content) 20%, #0000);
+      }
+    }
+    .textarea textarea {
+      appearance: none;
+      background-color: transparent;
+      border: none;
+    }
+    .textarea textarea:focus, .textarea textarea:focus-within {
+      --tw-outline-style: none;
+      outline-style: none;
+    }
+    @media (forced-colors: active) {
+      .textarea textarea:focus, .textarea textarea:focus-within {
+        outline: 2px solid transparent;
+        outline-offset: 2px;
+      }
+    }
+    .textarea:focus, .textarea:focus-within {
+      --input-color: var(--color-base-content);
+      box-shadow: 0 1px var(--input-color);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea:focus, .textarea:focus-within {
+        box-shadow: 0 1px color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000);
+      }
+    }
+    .textarea:focus, .textarea:focus-within {
+      outline: 2px solid var(--input-color);
+      outline-offset: 2px;
+      isolation: isolate;
+    }
+    @media (pointer: coarse) {
+      @supports (-webkit-touch-callout: none) {
+        .textarea:focus, .textarea:focus-within {
+          --font-size: 1rem;
+        }
+      }
+    }
+    .textarea:has(> textarea[disabled]), .textarea:is(:disabled, [disabled]) {
+      cursor: not-allowed;
+      border-color: var(--color-base-200);
+      background-color: var(--color-base-200);
+      color: var(--color-base-content);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea:has(> textarea[disabled]), .textarea:is(:disabled, [disabled]) {
+        color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+      }
+    }
+    .textarea:has(> textarea[disabled])::placeholder, .textarea:is(:disabled, [disabled])::placeholder {
+      color: var(--color-base-content);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .textarea:has(> textarea[disabled])::placeholder, .textarea:is(:disabled, [disabled])::placeholder {
+        color: color-mix(in oklab, var(--color-base-content) 20%, transparent);
+      }
+    }
+    .textarea:has(> textarea[disabled]), .textarea:is(:disabled, [disabled]) {
+      box-shadow: none;
+    }
+    .textarea:has(> textarea[disabled]) > textarea[disabled] {
+      cursor: not-allowed;
+    }
+  }
+  @layer daisyui.l1.l2.l3 {
     .modal-box {
       grid-column-start: 1;
       grid-row-start: 1;
@@ -1270,6 +1361,15 @@
       gap: calc(0.25rem * 2);
     }
   }
+  .mt-4 {
+    margin-top: calc(var(--spacing) * 4);
+  }
+  .mt-6 {
+    margin-top: calc(var(--spacing) * 6);
+  }
+  .mt-10 {
+    margin-top: calc(var(--spacing) * 10);
+  }
   @layer daisyui.l1.l2.l3 {
     .fieldset-legend {
       margin-bottom: calc(0.25rem * -1);
@@ -1281,6 +1381,9 @@
       color: var(--color-base-content);
       font-weight: 600;
     }
+  }
+  .mb-2 {
+    margin-bottom: calc(var(--spacing) * 2);
   }
   .mb-6 {
     margin-bottom: calc(var(--spacing) * 6);
@@ -1400,6 +1503,15 @@
       grid-auto-rows: max-content;
     }
   }
+  @layer daisyui.l1.l2.l3 {
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: calc(0.25rem * 2);
+      font-size: var(--cardtitle-fs, 1.125rem);
+      font-weight: 600;
+    }
+  }
   .block {
     display: block;
   }
@@ -1482,6 +1594,19 @@
     margin-inline-start: calc(calc(var(--spacing) * 2) * var(--tw-space-x-reverse));
     margin-inline-end: calc(calc(var(--spacing) * 2) * calc(1 - var(--tw-space-x-reverse)));
   }
+  .overflow-x-auto {
+    overflow-x: auto;
+  }
+  .rounded {
+    border-radius: 0.25rem;
+  }
+  .border {
+    border-style: var(--tw-border-style);
+    border-width: 1px;
+  }
+  .border-base-300 {
+    border-color: var(--color-base-300);
+  }
   .bg-base-100 {
     background-color: var(--color-base-100);
   }
@@ -1493,6 +1618,9 @@
   }
   .p-0 {
     padding: calc(var(--spacing) * 0);
+  }
+  .p-4 {
+    padding: calc(var(--spacing) * 4);
   }
   .p-8 {
     padding: calc(var(--spacing) * 8);
@@ -1530,6 +1658,10 @@
   .text-xl {
     font-size: var(--text-xl);
     line-height: var(--tw-leading, var(--text-xl--line-height));
+  }
+  .leading-7 {
+    --tw-leading: calc(var(--spacing) * 7);
+    line-height: calc(var(--spacing) * 7);
   }
   .leading-normal {
     --tw-leading: var(--leading-normal);
@@ -1607,6 +1739,10 @@
     --tw-shadow: 0 25px 50px -12px var(--tw-shadow-color, rgb(0 0 0 / 0.25));
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
+  .shadow-sm {
+    --tw-shadow: 0 1px 3px 0 var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 1px 2px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1));
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
   @layer daisyui.l1 {
     .btn-ghost:not(.btn-active, :hover, :active:focus, :focus-visible, input:checked:not(.filter .btn)) {
       --btn-shadow: "";
@@ -1682,6 +1818,12 @@
     .btn-primary {
       --btn-color: var(--color-primary);
       --btn-fg: var(--color-primary-content);
+    }
+  }
+  @layer daisyui.l1.l2.l3 {
+    .btn-secondary {
+      --btn-color: var(--color-secondary);
+      --btn-fg: var(--color-secondary-content);
     }
   }
 }
@@ -1947,6 +2089,11 @@
   inherits: false;
   initial-value: 0;
 }
+@property --tw-border-style {
+  syntax: "*";
+  inherits: false;
+  initial-value: solid;
+}
 @property --tw-leading {
   syntax: "*";
   inherits: false;
@@ -2029,6 +2176,7 @@
     *, ::before, ::after, ::backdrop {
       --tw-space-y-reverse: 0;
       --tw-space-x-reverse: 0;
+      --tw-border-style: solid;
       --tw-leading: initial;
       --tw-font-weight: initial;
       --tw-tracking: initial;

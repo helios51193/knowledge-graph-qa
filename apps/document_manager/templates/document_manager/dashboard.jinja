@@ -45,6 +45,45 @@ Dashboard
 >
 </div>
 
+<div class="mt-10 card bg-base-100 border border-base-300 shadow-sm">
+    <div class="card-body">
+        <h2 class="card-title">Ask The Graph</h2>
+
+        <form
+            class="space-y-4"
+            hx-post="/document/api/ask-question/0"
+            hx-target="#qa-result"
+            hx-swap="innerHTML"
+            hx-on:htmx:config-request="event.detail.path = '/document/api/ask-question/' + this.querySelector('[name=doc_id]').value">
+            <div>
+                <label class="label">
+                    <span class="label-text">Document ID</span>
+                </label>
+                <input type="number" name="doc_id" class="input input-bordered w-full" placeholder="Enter document id" required/>
+            </div>
+
+            <div>
+                <label class="label">
+                    <span class="label-text">Question</span>
+                </label>
+                <textarea
+                    name="question"
+                    class="textarea textarea-bordered w-full"
+                    rows="4"
+                    placeholder="Example: Who works at OpenAI?"
+                    required
+                ></textarea>
+            </div>
+
+            <button class="btn btn-secondary" type="submit">
+                Ask
+            </button>
+        </form>
+
+        <div id="qa-result"></div>
+    </div>
+</div>
+
 
 <!-- Modal target -->
 

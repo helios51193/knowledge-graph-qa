@@ -10,6 +10,7 @@ urlpatterns = [
                 # api
                 path("api/delete-document/<int:doc_id>", views.delete_document, name="delete_document"),
                 path("api/process-document/<int:doc_id>", views.process_document_view, name="process_document"),
+                path("api/ask-question/<int:doc_id>", views.ask_question, name="ask_question"),
 
                 # view
                 path("dashboard", views.document_dashboard, name="dashboard"),]

@@ -100,3 +100,11 @@ def _sanitize_relationship_type(value):
         cleaned = f"REL_{cleaned}"
 
     return cleaned
+
+def execute_read_query(query):
+    memgraph = Memgraph(
+        host=settings.MG_HOST,
+        port=int(settings.MG_PORT),
+    )
+
+    return list(memgraph.execute_and_fetch(query))
