@@ -1,0 +1,211 @@
+{% extends "document_manager/base.jinja" %}
+
+{% block title %}
+QA - {{ document.name }}
+{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+    <div>
+        <h1 class="text-3xl font-bold">Document QA</h1>
+        <p class="text-sm opacity-70">
+            Ask questions about "{{ document.name }}"
+        </p>
+    </div>
+
+    <a href="{{ url('document_manager:dashboard') }}" class="btn btn-outline">
+        Back To Dashboard
+    </a>
+</div>
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <section class="card border border-base-300 bg-base-100 shadow-sm min-h-[70vh]">
+        <div class="card-body p-0">
+            <div class="border-b border-base-300 px-6 py-4">
+                <h2 class="text-lg font-semibold">Conversation</h2>
+                <p class="text-sm opacity-70">
+                    Ask questions about the extracted graph for this document
+                </p>
+            </div>
+
+            <div id="qa-thread" class="flex-1 space-y-4 overflow-y-auto px-6 py-6">
+                <div class="chat chat-start">
+                    <div class="chat-bubble bg-base-200 text-base-content">
+                        Ask a question to begin exploring this document's graph.
+                    </div>
+                </div>
+            </div>
+
+            <div class="border-t border-base-300 px-6 py-4">
+                <form
+                    class="space-y-3"
+                    hx-post="{{ url('document_manager:ask_question', kwargs={'doc_id': document.id}) }}"
+                    hx-target="#qa-thread"
+                    hx-swap="beforeend"
+                >
+                    {% csrf_token %}
+
+                    <textarea
+                        name="question"
+                        class="textarea textarea-bordered w-full"
+                        rows="3"
+                        placeholder="Ask something like: What can you tell me about Whisperwood?"
+                        required
+                    ></textarea>
+
+                    <div class="flex justify-end">
+                        <button class="btn btn-primary" type="submit">
+                            Ask
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <section class="card border border-base-300 bg-base-100 shadow-sm min-h-[70vh]">
+        <div class="card-body">
+            <div class="mb-4 flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold">Graph View</h2>
+                    <p class="text-sm opacity-70">
+                        Visual graph for this document
+                    </p>
+                </div>
+
+                <div class="text-sm opacity-70">
+                    Nodes: {{ document.nodes }} | Edges: {{ document.edges }}
+                    <button id="reset-graph-btn" type="button" class="btn btn-sm btn-outline"> Reset View </button>
+                </div>
+            </div>
+
+            {% if document.graph_data and document.graph_data.nodes %}
+                <div id="graph-view" class="h-[600px] w-full rounded-xl border border-base-300 bg-slate-900"></div>
+
+                <div class="mt-4 flex flex-wrap gap-2 text-xs">
+                <span class="badge bg-transparent text-[#60a5fa] border-[#60a5fa]">Person</span>
+                <span class="badge bg-transparent text-[#34d399] border-[#34d399]">Location</span>
+                <span class="badge bg-transparent text-[#fbbf24] border-[#fbbf24]">Organization</span>
+                <span class="badge bg-transparent text-[#9ca3af] border-[#9ca3af]">Concept</span>
+            </div>
+            {% else %}
+                <div class="mt-4 flex h-full min-h-[500px] items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-200/40">
+                    <div class="text-center">
+                        <p class="font-medium">No graph data available</p>
+                        <p class="mt-2 text-sm opacity-70">
+                            Process the document first to generate the graph.
+                        </p>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+</div>
+
+{% if document.graph_data and document.graph_data.nodes %}
+
+    <script>
+        const graphData = {{ (document.graph_data or {"nodes": [], "edges": []}) | tojson }};
+
+        function nodeColor(label) {
+            switch (label) {
+                case "Person":
+                    return "#3b82f6";
+                case "Location":
+                    return "#10b981";
+                case "Organization":
+                    return "#f59e0b";
+                case "Concept":
+                    return "#6b7280";
+                default:
+                    return "#8b5cf6";
+            }
+        }
+
+        const elements = [];
+
+        for (const node of graphData.nodes || []) {
+            elements.push({
+                data: {
+                    id: node.id,
+                    label: node.label,
+                    name: node.name,
+                    document_id: node.document_id,
+                }
+            });
+        }
+
+        for (const edge of graphData.edges || []) {
+            elements.push({
+                data: {
+                    id: `${edge.source}-${edge.type}-${edge.target}`,
+                    source: edge.source,
+                    target: edge.target,
+                    label: edge.type,
+                    type: edge.type,
+                }
+            });
+        }
+
+        const cy = cytoscape({
+            container: document.getElementById("graph-view"),
+            elements: elements,
+            layout: {
+                name: "cose",
+                animate: true,
+                fit: true,
+                padding: 30,
+            },
+            style: [
+                {
+                    selector: "node",
+                    style: {
+                        "background-color": function(ele) {
+                            return nodeColor(ele.data("label"));
+                        },
+                        "label": "data(name)",
+                        "color": "#f3f4f6",
+                        "text-valign": "bottom",
+                        "text-halign": "center",
+                        "font-size": "10px",
+                        "text-margin-y": 8,
+                        "width": 28,
+                        "height": 28,
+                        "border-width": 2,
+                        "border-color": "#ffffff",
+                    }
+                },
+                {
+                    selector: "edge",
+                    style: {
+                        "curve-style": "bezier",
+                        "width": 2,
+                        "line-color": "#94a3b8",
+                        "target-arrow-color": "#94a3b8",
+                        "target-arrow-shape": "triangle",
+                        "arrow-scale": 0.9,
+                        "label": "data(label)",
+                        "font-size": "8px",
+                        "color": "#e5e7eb",
+                        "text-background-color": "#111827",
+                        "text-background-opacity": 0.85,
+                        "text-background-padding": "2px",
+                    }
+                }
+            ]
+        });
+
+        cy.on("tap", "node", function(evt) {
+            const node = evt.target;
+            console.log("Node clicked:", node.data());
+        });
+
+        const graphResetButton = document.getElementById("reset-graph-btn");
+        if (graphResetButton) {
+            graphResetButton.addEventListener("click", function () {
+                cy.fit(cy.elements(), 30);
+            });
+        }
+    </script>
+{% endif %}
+{% endblock %}

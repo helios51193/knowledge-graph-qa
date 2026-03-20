@@ -134,6 +134,17 @@ def ask_question(request, doc_id):
             }
         
         return render(request, "document_manager/components/qa_result.jinja", context=context)
-        
+
+@login_required
+def document_qa_page(request, doc_id):
+    document = get_object_or_404(Document, id=doc_id, user=request.user)
+
+    return render(
+        request,
+        "document_manager/qa_page.jinja",
+        {
+            "document": document,
+        },
+    )
 
 

@@ -13,4 +13,5 @@ urlpatterns = [
                 path("api/ask-question/<int:doc_id>", views.ask_question, name="ask_question"),
 
                 # view
+                path("qa/<int:doc_id>", views.document_qa_page, name="qa_page"),
                 path("dashboard", views.document_dashboard, name="dashboard"),]

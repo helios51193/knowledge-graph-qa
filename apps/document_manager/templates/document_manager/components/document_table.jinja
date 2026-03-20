@@ -55,6 +55,7 @@
                         <button class="btn btn-sm btn-error" hx-delete="{{url('document_manager:delete_document', args=[doc.id])}}" hx-swap="none" > 
                             Delete 
                         </button>
+                        <a  class="btn btn-sm btn-primary" href="{{ url('document_manager:qa_page', kwargs={'doc_id':doc.id }) }}" > Open QA </a>
                     </td>
 
                 </tr>

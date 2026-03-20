@@ -2,34 +2,42 @@
 
 ## Purpose of this Document
 
-This document describes the current architecture, implemented modules, and near-term direction of the Knowledge Graph QA System.
+This document describes the current architecture, implemented modules, UI structure, and near-term direction of the Knowledge Graph QA System.
 
 The goal is to help a developer or autonomous agent understand:
 
 - what the system does today
-- how the main modules are organized
-- how the ingestion pipeline works
+- how the main Django apps and service layers are organized
+- how document ingestion works end to end
 - how graph data is stored and queried
-- how the QA layer currently works
-- what the main limitations and next steps are
+- how the QA layer currently operates
+- how the current UI is structured
+- what the most important limitations and next steps are
 
-This document reflects the project as it is currently implemented, while also noting important architectural intent where relevant.
+This document reflects the project as it is currently implemented.
 
 ---
 
 # System Overview
 
-This project is a Django-based knowledge graph question-answering platform built around a document ingestion pipeline and a Memgraph-backed query layer.
+This project is a Django-based knowledge graph question-answering platform built around:
+
+- document ingestion
+- entity and relation extraction
+- graph generation
+- graph persistence in Django and Memgraph
+- natural language question answering over the generated graph
 
 Users can:
 
 - sign up and log in
 - upload documents
 - process documents asynchronously
-- extract entities and relationships from document text
-- generate a graph representation from that extracted data
-- store the graph both in Django and in Memgraph
-- ask natural language questions about a processed document
+- generate a graph from unstructured text
+- store that graph in both `graph_data` and Memgraph
+- open a dedicated QA page for a processed document
+- ask natural language questions against that document graph
+- view the graph in a visual panel while querying it
 
 The overall architecture follows a Graph-RAG style workflow:
 
@@ -56,6 +64,7 @@ Document
 - Alpine.js
 - Tailwind CSS
 - DaisyUI
+- Cytoscape.js for graph visualization
 
 ## Graph Database
 
@@ -67,8 +76,8 @@ Document
 
 Currently supported LLM choices in the app:
 
-- GPT-4 style OpenAI-backed extraction / QA
-- Local Llama via Ollama
+- OpenAI-backed GPT-style extraction and QA
+- local Llama via Ollama
 
 ## Background Processing
 
@@ -88,12 +97,13 @@ Primary apps:
 
 The main implementation currently lives in `document_manager`, which contains:
 
-- views and routes
+- routes and views
 - upload and processing flow
 - ingestion pipeline services
 - graph building
 - graph database integration
 - QA engine
+- UI templates for dashboard and QA
 
 Service modules are organized by responsibility, including:
 
@@ -135,8 +145,9 @@ Responsibilities include:
 - graph generation
 - graph persistence
 - question answering over the generated graph
+- graph-aware QA UI
 
-Documents are scoped to users, so each user sees only their own uploaded documents in the application layer.
+Documents are scoped to users at the application layer, so each user sees only their own uploaded documents.
 
 ---
 
@@ -159,7 +170,7 @@ Important fields include:
 - `graph_data` - JSON representation of the generated graph
 - `created_at` - upload timestamp
 
-The `graph_data` field acts as the Django-side serialized version of the document graph.
+The `graph_data` field acts as the Django-side serialized version of the document graph and is also used to drive the graph viewer on the QA page.
 
 ---
 
@@ -195,19 +206,43 @@ These logs help debug asynchronous document processing.
 
 The frontend is server-rendered and HTMX-enhanced.
 
-Current UI responsibilities include:
+Current UI surfaces include:
 
-- document dashboard
+- dashboard
 - upload modal
-- document table refresh
-- process trigger
-- QA form and answer display
+- document table
+- dedicated QA page
 
-The dashboard is the main working surface for the user. It currently supports:
+## Dashboard
+
+The dashboard currently supports:
 
 - listing uploaded documents
-- processing documents
-- asking questions against a selected document graph
+- showing node/edge/relation counts
+- showing process status
+- starting document processing
+- deleting documents
+- opening a dedicated QA page for a selected document
+
+## Dedicated QA Page
+
+The QA experience now lives on a dedicated page per document.
+
+Current layout:
+
+- left panel: chat-style QA thread
+- right panel: graph viewer
+
+The left side is the primary interaction surface for:
+
+- entering questions
+- showing answer messages
+- showing generated Cypher
+- showing raw query results when needed
+
+The right side currently renders the document graph visually using Cytoscape.js.
+
+This creates a stronger document-specific QA experience than placing QA directly on the dashboard.
 
 ---
 
@@ -241,22 +276,24 @@ User clicks Process
 
 ## QA Flow
 
-The QA flow works as follows:
+The QA flow currently works as follows:
 
-User selects a document id and asks a question  
+User opens the QA page for a document  
+-> User asks a natural language question  
 -> QA engine builds graph schema context from `graph_data`  
 -> LLM generates a read-only Cypher query  
 -> Cypher is validated for safety  
 -> Query is executed against Memgraph  
--> If execution fails, a repair prompt is used to generate corrected Cypher  
+-> If execution fails, a repair prompt generates corrected Cypher  
 -> Result rows are converted into a natural-language answer  
--> Answer is rendered back into the dashboard
+-> The answer is appended to the chat thread  
+-> The graph remains visible in the adjacent graph panel
 
 ---
 
 # Document Processing Pipeline
 
-The current pipeline is:
+The current ingestion pipeline is:
 
 Document Upload  
 -> Text Extraction  
@@ -453,7 +490,7 @@ The resulting graph structure looks like:
   ],
   "edges": [
     {
-      "source": "3:Character:Elarin",
+      "source": "3:Person:Elarin",
       "target": "3:Location:Whisperwood",
       "source_name": "Elarin",
       "target_name": "Whisperwood",
@@ -467,3 +504,229 @@ The resulting graph structure looks like:
     "relation_types": 4
   }
 }
+```
+
+This structure is stored in `document.graph_data`.
+
+---
+
+# Graph Persistence
+
+Graph data is persisted in two places.
+
+## Django Database
+
+The serialized graph is stored in `Document.graph_data`.
+
+Additional summary values are also stored:
+
+- `nodes`
+- `edges`
+- `relations`
+
+This gives the app a quick summary view of processing results and also supplies the data needed for the graph viewer.
+
+## Memgraph
+
+The graph is also inserted into Memgraph.
+
+Current graph conventions in Memgraph:
+
+- all nodes use label `:Entity`
+- semantic type is stored in node property `label`
+- relationships use typed edges such as `WORKS_AT`, `LIVES_IN`, `ALLY_OF`, etc.
+- both nodes and edges are scoped using `document_id`
+
+The graph insertion service can also clear the graph database before insertion if configured to do so, though that behavior is primarily useful during development and should be used carefully.
+
+---
+
+# Graph Database Layer
+
+The graph database service handles Memgraph interaction.
+
+Current responsibilities:
+
+- create Memgraph connection
+- optionally clear database
+- delete existing graph for a single document
+- create nodes
+- create edges
+- execute read queries for QA
+
+This service is the bridge between the ingestion pipeline and the QA layer.
+
+---
+
+# QA Engine
+
+The QA engine is implemented and working.
+
+It is responsible for:
+
+- building a schema summary from the document graph
+- generating a Cypher query from a natural language question
+- validating that the generated query is read-only
+- executing the query against Memgraph
+- repairing Cypher if execution fails
+- generating a natural-language answer from result rows
+
+## QA Design Principles
+
+The QA layer currently follows these rules:
+
+- every query must be scoped to one document
+- only read-only Cypher is allowed
+- dangerous Cypher operations are blocked
+- prompts use actual graph schema instead of hardcoded domain assumptions
+- name matching prefers case-insensitive Cypher patterns
+- answer generation is phrased naturally but remains grounded in the graph result
+
+## Cypher Repair
+
+If generated Cypher fails to execute, the system performs a repair step.
+
+The repair flow is:
+
+Original question  
+-> Generated Cypher  
+-> Memgraph error  
+-> Repair prompt with bad query + error message  
+-> Corrected Cypher  
+-> Query execution retry
+
+This improves robustness against common LLM query mistakes.
+
+---
+
+# Graph Viewer
+
+The dedicated QA page now includes a graph viewer built with Cytoscape.js.
+
+Current capabilities:
+
+- render nodes and edges from `document.graph_data`
+- color nodes by entity type
+- display relation labels on edges
+- reset the graph view with a dedicated button
+- show a legend for the current entity color mapping
+
+Current state:
+
+- graph rendering is implemented
+- the graph and chat interface are visible side by side
+- graph highlighting based on QA results is not yet implemented
+
+The graph panel is intended to become the visual companion to the QA thread, eventually highlighting the relevant subgraph used to answer a question.
+
+---
+
+# Prompting Strategy
+
+The system currently uses LLMs in three major places:
+
+- entity extraction
+- relation extraction
+- QA query generation and answer generation
+
+Prompting is designed to be:
+
+- structured
+- JSON-oriented where extraction is involved
+- read-only and safety-constrained where Cypher is involved
+- grounded in graph schema where QA is involved
+
+The QA prompt has been made more generic so it can work with non-business domains such as fantasy, narrative, or mixed-content documents.
+
+---
+
+# Testing Direction
+
+The project is beginning to add test coverage around the end-to-end pipeline.
+
+The intended testing strategy is:
+
+- use Django `TestCase` for application-level testing
+- use real Django models and uploaded files in tests
+- mock external boundaries such as Memgraph writes and LLM calls
+- cover both ingestion flow and QA flow
+
+Current testing priorities include:
+
+- pipeline completion and document field updates
+- processing log creation
+- graph generation correctness
+- QA query generation and repair behavior
+
+---
+
+# Current Strengths
+
+The project now has a working vertical slice across ingestion, graph creation, QA, and UI.
+
+Implemented strengths include:
+
+- modular pipeline design
+- pluggable extractor/factory pattern
+- support for heuristic and LLM extraction
+- graph serialization into Django
+- Memgraph insertion
+- natural-language question answering over the graph
+- Cypher safety validation
+- Cypher repair on query execution failure
+- more natural answer tone while remaining grounded
+- dedicated document QA page
+- integrated graph visualization using Cytoscape.js
+
+---
+
+# Current Limitations
+
+Important current limitations include:
+
+- extraction quality still depends heavily on document style and chunk quality
+- heuristic extraction remains brittle across very different domains
+- LLM extraction may still produce incomplete or imperfect graph structure
+- QA may return shallow answers if the graph itself is sparse
+- graph highlighting from QA results is not yet implemented
+- query repair currently handles execution errors, but not yet weak or empty-result recovery
+- graph clearing behavior should be used carefully in multi-document scenarios
+- tests are still being expanded and stabilized
+
+---
+
+# Near-Term Next Steps
+
+Likely next improvements are:
+
+- graph highlighting based on QA results
+- empty-but-suspicious QA result recovery
+- better QA thread persistence
+- stronger automated test coverage
+- safer multi-document graph coexistence
+- improved extraction prompts and normalization
+- confidence scoring or better answer provenance
+- hybrid extraction strategies where useful
+
+---
+
+# Long-Term Goals
+
+The long-term goal is to build a lightweight but capable platform for:
+
+- ingesting unstructured documents
+- transforming them into knowledge graphs
+- storing and querying those graphs efficiently
+- answering natural language questions over graph structure
+- visually exploring the graph while asking questions
+- demonstrating practical Graph-RAG architecture patterns
+
+The project is also intended to serve as a hands-on system for learning and demonstrating:
+
+- knowledge graph engineering
+- graph database integration
+- LLM pipeline design
+- prompt engineering for structured extraction
+- question answering over symbolic graph data
+- graph-aware application UI design
+- modular Django application architecture
