@@ -7,28 +7,56 @@
 <div class="chat chat-start">
     <div class="chat-bubble bg-base-200 text-base-content max-w-full">
         {% if has_error %}
-            <div class="text-error font-medium">Error</div>
-            <div class="mt-1">{{ answer }}</div>
+        <div class="text-error font-medium">Error</div>
+        <div class="mt-1">{{ answer }}</div>
         {% else %}
-            <div>{{ answer }}</div>
+        <div>{{ answer }}</div>
         {% endif %}
 
         {% if cypher %}
-            <details class="mt-3">
-                <summary class="cursor-pointer text-sm font-medium opacity-80">
-                    Show Cypher
-                </summary>
-                <pre class="mt-2 overflow-x-auto rounded bg-base-300/60 p-3 text-xs">{{ cypher }}</pre>
-            </details>
+        <details class="mt-3">
+            <summary class="cursor-pointer text-sm font-medium opacity-80">
+                Show Cypher
+            </summary>
+            <pre class="mt-2 overflow-x-auto rounded bg-base-300/60 p-3 text-xs">{{ cypher }}</pre>
+        </details>
         {% endif %}
 
         {% if rows %}
-            <details class="mt-3">
-                <summary class="cursor-pointer text-sm font-medium opacity-80">
-                    Show Query Result
-                </summary>
-                <pre class="mt-2 overflow-x-auto rounded bg-base-300/60 p-3 text-xs">{{ rows }}</pre>
-            </details>
+        <details class="mt-3">
+            <summary class="cursor-pointer text-sm font-medium opacity-80">
+                Show Query Result
+            </summary>
+            <pre class="mt-2 overflow-x-auto rounded bg-base-300/60 p-3 text-xs">{{ rows }}</pre>
+        </details>
+        {% endif %}
+        {% if provenance %}
+        <details class="mt-3">
+            <summary class="cursor-pointer text-sm font-medium opacity-80">
+                Show Source Evidence
+            </summary>
+
+            <div class="mt-3 space-y-3">
+                {% for item in provenance %}
+                <div class="rounded bg-base-300/40 p-3 text-xs">
+                    <div class="font-semibold">
+                        {{ item.title }}
+                    </div>
+
+                    <div class="mt-1 opacity-70">
+                        Chunk {{ item.chunk_id }}
+                        {% if item.start_index is not none and item.end_index is not none %}
+                        | {{ item.start_index }} - {{ item.end_index }}
+                        {% endif %}
+                    </div>
+
+                    <div class="mt-2 whitespace-pre-wrap">
+                        {{ item.snippet or item.source_text }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </details>
         {% endif %}
     </div>
 </div>

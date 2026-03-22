@@ -40,12 +40,224 @@ class QAEngine:
             schema=schema,
         )
 
+        highlight = self._build_highlight_payload(document, rows)
+        provenance = self._build_provenance_payload(document, highlight)
+
         return {
             "question": question,
             "cypher": cypher,
             "rows": rows,
             "answer": answer,
+            "highlight":highlight,
+            "provenance":provenance
         }
+    
+    def _build_highlight_payload(self, document, rows):
+        
+        graph_data = document.graph_data or {}
+        nodes = graph_data.get("nodes", [])
+        edges = graph_data.get("edges", [])
+
+        node_id_by_name = {
+            node["name"].strip().lower(): node["id"]
+            for node in nodes
+            if node.get("name") and node.get("id")
+        }
+
+        highlighted_names = set()
+        highlighted_relation_types = set()
+
+        for row in rows:
+            self._collect_highlight_values(
+                value=row,
+                highlighted_names=highlighted_names,
+                highlighted_relation_types=highlighted_relation_types,
+            )
+
+        node_ids = set()
+        for name in highlighted_names:
+            node_id = node_id_by_name.get(name.lower())
+            if node_id:
+                node_ids.add(node_id)
+
+        edge_ids = set()
+        for edge in edges:
+            edge_id = f'{edge["source"]}-{edge["type"]}-{edge["target"]}'
+
+            source_selected = edge["source"] in node_ids
+            target_selected = edge["target"] in node_ids
+            relation_selected = edge["type"] in highlighted_relation_types
+
+            if (source_selected and target_selected) or relation_selected:
+                edge_ids.add(edge_id)
+
+        return {
+            "node_ids": sorted(node_ids),
+            "edge_ids": sorted(edge_ids),
+            "focus": True,
+        }
+    
+    def _collect_highlight_values(self, value, highlighted_names, highlighted_relation_types):
+        if isinstance(value, dict):
+            for key, inner_value in value.items():
+                key_lower = str(key).lower()
+
+                if isinstance(inner_value, str):
+                    cleaned = inner_value.strip()
+
+                    if key_lower in {
+                        "name",
+                        "entity_name",
+                        "entity",
+                        "related_entity",
+                        "source",
+                        "target",
+                    }:
+                        highlighted_names.add(cleaned)
+
+                    elif key_lower in {
+                        "relation",
+                        "relation_type",
+                        "type",
+                    }:
+                        highlighted_relation_types.add(cleaned.upper())
+
+                else:
+                    self._collect_highlight_values(
+                        inner_value,
+                        highlighted_names,
+                        highlighted_relation_types,
+                    )
+
+        elif isinstance(value, list):
+            for item in value:
+                self._collect_highlight_values(
+                    item,
+                    highlighted_names,
+                    highlighted_relation_types,
+                )
+
+    def _build_provenance_payload(self, document, highlight):
+        graph_data = document.graph_data or {}
+        nodes = graph_data.get("nodes", [])
+        edges = graph_data.get("edges", [])
+
+        node_map = {node["id"]: node for node in nodes if node.get("id")}
+        edge_map = {
+            f'{edge["source"]}-{edge["type"]}-{edge["target"]}': edge
+            for edge in edges
+            if edge.get("source") and edge.get("type") and edge.get("target")
+        }
+
+        evidence = []
+
+        for node_id in highlight.get("node_ids", []):
+            node = node_map.get(node_id)
+            if not node:
+                continue
+
+            provenance = node.get("provenance") or {}
+            source_text = (provenance.get("source_text") or "").strip()
+
+            if not source_text:
+                continue
+
+            evidence.append({
+                "kind": "node",
+                "title": f'{node.get("name")} ({node.get("label")})',
+                "chunk_id": provenance.get("chunk_id"),
+                "start_index": provenance.get("start_index"),
+                "end_index": provenance.get("end_index"),
+                "source_text": source_text,
+                "snippet": self._build_text_snippet(
+                            source_text=source_text,
+                            terms=[node.get("name", "")],
+                ),
+            })
+
+        for edge_id in highlight.get("edge_ids", []):
+            edge = edge_map.get(edge_id)
+            if not edge:
+                continue
+
+            provenance = edge.get("provenance") or {}
+            source_text = (provenance.get("source_text") or "").strip()
+
+            if not source_text:
+                continue
+
+            evidence.append({
+                "kind": "edge",
+                "title": f'{edge.get("source_name")} -[{edge.get("type")}]-> {edge.get("target_name")}',
+                "chunk_id": provenance.get("chunk_id"),
+                "start_index": provenance.get("start_index"),
+                "end_index": provenance.get("end_index"),
+                "source_text": source_text,
+                "snippet": self._build_text_snippet(
+                source_text=source_text,
+                terms=[
+                    edge.get("source_name", ""),
+                    edge.get("target_name", ""),
+                    edge.get("type", ""),
+                ],
+            ),
+
+            })
+
+        unique_evidence = []
+        seen = set()
+
+        for item in evidence:
+            key = (
+                item["kind"],
+                item["title"],
+                item["chunk_id"],
+                item["source_text"],
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_evidence.append(item)
+
+        return unique_evidence[:6]
+
+    def _build_text_snippet(self, source_text, terms, window=140):
+        text = (source_text or "").strip()
+        if not text:
+            return ""
+
+        lower_text = text.lower()
+
+        match_index = -1
+        match_term = ""
+
+        for term in terms:
+            cleaned_term = (term or "").strip()
+            if not cleaned_term:
+                continue
+
+            idx = lower_text.find(cleaned_term.lower())
+            if idx != -1:
+                match_index = idx
+                match_term = cleaned_term
+                break
+
+        if match_index == -1:
+            if len(text) <= window:
+                return text
+            return text[:window].rstrip() + "..."
+
+        start = max(0, match_index - window // 2)
+        end = min(len(text), match_index + len(match_term) + window // 2)
+
+        snippet = text[start:end].strip()
+
+        if start > 0:
+            snippet = "..." + snippet
+        if end < len(text):
+            snippet = snippet + "..."
+
+        return snippet
 
     def _build_graph_schema(self, document):
         graph_data = document.graph_data or {}

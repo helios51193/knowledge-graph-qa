@@ -2,17 +2,17 @@
 
 ## Purpose of this Document
 
-This document describes the current architecture, implemented modules, UI structure, and near-term direction of the Knowledge Graph QA System.
+This document describes the current architecture, implemented modules, UI behavior, and near-term direction of the Knowledge Graph QA System.
 
 The goal is to help a developer or autonomous agent understand:
 
-- what the system does today
+- what the system currently does
 - how the main Django apps and service layers are organized
-- how document ingestion works end to end
-- how graph data is stored and queried
+- how the ingestion pipeline works end to end
+- how graph data is stored, normalized, and queried
 - how the QA layer currently operates
-- how the current UI is structured
-- what the most important limitations and next steps are
+- how the current UI and graph interaction work
+- what the key limitations and next steps are
 
 This document reflects the project as it is currently implemented.
 
@@ -24,9 +24,11 @@ This project is a Django-based knowledge graph question-answering platform built
 
 - document ingestion
 - entity and relation extraction
+- entity normalization
 - graph generation
 - graph persistence in Django and Memgraph
 - natural language question answering over the generated graph
+- visual graph exploration during QA
 
 Users can:
 
@@ -34,16 +36,18 @@ Users can:
 - upload documents
 - process documents asynchronously
 - generate a graph from unstructured text
-- store that graph in both `graph_data` and Memgraph
+- store that graph both in `graph_data` and Memgraph
 - open a dedicated QA page for a processed document
 - ask natural language questions against that document graph
-- view the graph in a visual panel while querying it
+- view and interact with the graph while querying it
+- inspect provenance for graph elements and QA evidence
 
 The overall architecture follows a Graph-RAG style workflow:
 
 Document  
 -> Text processing  
 -> Entity and relation extraction  
+-> Entity normalization  
 -> Graph generation  
 -> Graph storage  
 -> Natural language question answering via Cypher + LLM
@@ -83,6 +87,12 @@ Currently supported LLM choices in the app:
 
 - Celery
 - Redis as broker/result backend
+
+## Specialized NLP / Matching Direction
+
+The project is beginning to move toward more generalized normalization using scoring-based matching rather than only hardcoded heuristics.
+
+This normalization direction is intended to rely primarily on deterministic NLP / string matching techniques rather than heavy LLM usage.
 
 ---
 
@@ -226,21 +236,28 @@ The dashboard currently supports:
 
 ## Dedicated QA Page
 
-The QA experience now lives on a dedicated page per document.
+The QA experience lives on a dedicated page per document.
 
 Current layout:
 
 - left panel: chat-style QA thread
-- right panel: graph viewer
+- right panel: graph viewer and graph evidence panel
 
 The left side is the primary interaction surface for:
 
 - entering questions
 - showing answer messages
 - showing generated Cypher
-- showing raw query results when needed
+- showing raw query results
+- showing source evidence used by the answer
 
-The right side currently renders the document graph visually using Cytoscape.js.
+The right side currently supports:
+
+- rendering the graph with Cytoscape.js
+- resetting the graph viewport
+- highlighting relevant nodes and edges based on QA output
+- selecting graph elements directly
+- viewing provenance for clicked nodes and edges
 
 This creates a stronger document-specific QA experience than placing QA directly on the dashboard.
 
@@ -268,6 +285,7 @@ User clicks Process
 -> Text is chunked  
 -> Entities are extracted  
 -> Relations are extracted  
+-> Entities are normalized  
 -> Graph is built  
 -> Graph is saved to `graph_data`  
 -> Counts are updated on the `Document` model  
@@ -286,8 +304,11 @@ User opens the QA page for a document
 -> Query is executed against Memgraph  
 -> If execution fails, a repair prompt generates corrected Cypher  
 -> Result rows are converted into a natural-language answer  
+-> Highlight payload is built from the result rows  
+-> Provenance payload is built from the highlighted graph elements  
 -> The answer is appended to the chat thread  
--> The graph remains visible in the adjacent graph panel
+-> The graph highlights the relevant subgraph  
+-> Source evidence is shown in the QA response and is also inspectable from graph clicks
 
 ---
 
@@ -301,6 +322,7 @@ Document Upload
 -> Text Chunking  
 -> Entity Extraction  
 -> Relation Extraction  
+-> Entity Normalization  
 -> Graph Building  
 -> Save Graph Data to Django  
 -> Insert Graph into Memgraph
@@ -464,15 +486,36 @@ Relation output includes:
 
 ---
 
+# Entity Normalization
+
+The project is now introducing a dedicated entity normalization step between extraction and graph building.
+
+The motivation is to reduce duplicate graph nodes caused by surface-form variation, such as:
+
+- singular vs plural forms
+- simple lexical variants
+- lightly different surface mentions referring to the same concept
+
+The intended normalization direction is:
+
+- use scoring-based matching rather than hardcoded merge rules only
+- prefer deterministic NLP and string similarity methods over heavy LLM usage
+- preserve original extracted forms while assigning canonical names for graph merging
+
+This stage is especially important for concept-like entities, where duplicate isolated nodes can otherwise degrade graph quality and QA quality.
+
+---
+
 # Graph Building
 
-After extraction, entities and relations are converted into an in-memory graph representation.
+After extraction and normalization, entities and relations are converted into an in-memory graph representation.
 
 The graph builder currently:
 
 - deduplicates nodes
 - deduplicates edges
 - assigns a stable node id shape
+- preserves provenance metadata
 - produces node and edge collections
 - computes graph counts
 
@@ -485,17 +528,30 @@ The resulting graph structure looks like:
       "id": "3:Location:Whisperwood",
       "name": "Whisperwood",
       "label": "Location",
-      "document_id": 3
+      "document_id": 3,
+      "provenance": {
+        "chunk_id": 0,
+        "start_index": 0,
+        "end_index": 120,
+        "source_text": "Elarin lives in Whisperwood near the old pines."
+      }
     }
   ],
   "edges": [
     {
+      "id": "3:Person:Elarin-LIVES_IN-3:Location:Whisperwood",
       "source": "3:Person:Elarin",
       "target": "3:Location:Whisperwood",
       "source_name": "Elarin",
       "target_name": "Whisperwood",
       "type": "LIVES_IN",
-      "document_id": 3
+      "document_id": 3,
+      "provenance": {
+        "chunk_id": 0,
+        "start_index": 0,
+        "end_index": 120,
+        "source_text": "Elarin lives in Whisperwood near the old pines."
+      }
     }
   ],
   "counts": {
@@ -570,6 +626,8 @@ It is responsible for:
 - executing the query against Memgraph
 - repairing Cypher if execution fails
 - generating a natural-language answer from result rows
+- building graph highlight payloads from query results
+- building provenance payloads from highlighted graph elements
 
 ## QA Design Principles
 
@@ -581,6 +639,7 @@ The QA layer currently follows these rules:
 - prompts use actual graph schema instead of hardcoded domain assumptions
 - name matching prefers case-insensitive Cypher patterns
 - answer generation is phrased naturally but remains grounded in the graph result
+- explanations should remain traceable back to graph evidence
 
 ## Cypher Repair
 
@@ -601,7 +660,7 @@ This improves robustness against common LLM query mistakes.
 
 # Graph Viewer
 
-The dedicated QA page now includes a graph viewer built with Cytoscape.js.
+The dedicated QA page includes a graph viewer built with Cytoscape.js.
 
 Current capabilities:
 
@@ -610,14 +669,28 @@ Current capabilities:
 - display relation labels on edges
 - reset the graph view with a dedicated button
 - show a legend for the current entity color mapping
+- highlight relevant nodes and edges after a QA response
+- fade non-relevant graph elements during answer focus
+- zoom to the relevant subgraph when highlighting is applied
+- allow clicking nodes and edges to inspect provenance
 
-Current state:
+The graph panel is now an interactive companion to the QA thread rather than a passive visualization.
 
-- graph rendering is implemented
-- the graph and chat interface are visible side by side
-- graph highlighting based on QA results is not yet implemented
+---
 
-The graph panel is intended to become the visual companion to the QA thread, eventually highlighting the relevant subgraph used to answer a question.
+# Explainability And Provenance
+
+The system now includes a first provenance layer.
+
+Current provenance behavior:
+
+- entities retain chunk-level origin data
+- relations retain chunk-level origin data
+- graph nodes and edges store provenance in `graph_data`
+- QA answers surface source evidence derived from the highlighted graph elements
+- clicking graph elements allows inspection of their provenance in the UI
+
+This gives the project a stronger explainability story and supports more production-ready auditing behavior.
 
 ---
 
@@ -657,6 +730,7 @@ Current testing priorities include:
 - processing log creation
 - graph generation correctness
 - QA query generation and repair behavior
+- provenance and highlight payload generation
 
 ---
 
@@ -677,6 +751,8 @@ Implemented strengths include:
 - more natural answer tone while remaining grounded
 - dedicated document QA page
 - integrated graph visualization using Cytoscape.js
+- graph highlighting tied to QA output
+- provenance-aware answer evidence
 
 ---
 
@@ -687,8 +763,8 @@ Important current limitations include:
 - extraction quality still depends heavily on document style and chunk quality
 - heuristic extraction remains brittle across very different domains
 - LLM extraction may still produce incomplete or imperfect graph structure
+- normalization and canonicalization are still evolving
 - QA may return shallow answers if the graph itself is sparse
-- graph highlighting from QA results is not yet implemented
 - query repair currently handles execution errors, but not yet weak or empty-result recovery
 - graph clearing behavior should be used carefully in multi-document scenarios
 - tests are still being expanded and stabilized
@@ -699,14 +775,14 @@ Important current limitations include:
 
 Likely next improvements are:
 
-- graph highlighting based on QA results
-- empty-but-suspicious QA result recovery
-- better QA thread persistence
-- stronger automated test coverage
-- safer multi-document graph coexistence
-- improved extraction prompts and normalization
-- confidence scoring or better answer provenance
-- hybrid extraction strategies where useful
+- strengthen scoring-based entity normalization
+- improve provenance snippet quality and UI presentation
+- add empty-but-suspicious QA result recovery
+- add better QA thread persistence
+- expand automated test coverage
+- improve multi-document graph coexistence
+- add confidence scoring and merge reasons for normalization
+- explore hybrid extraction strategies where useful
 
 ---
 
@@ -716,9 +792,11 @@ The long-term goal is to build a lightweight but capable platform for:
 
 - ingesting unstructured documents
 - transforming them into knowledge graphs
+- normalizing and linking graph entities more intelligently
 - storing and querying those graphs efficiently
 - answering natural language questions over graph structure
 - visually exploring the graph while asking questions
+- showing evidence and provenance behind answers
 - demonstrating practical Graph-RAG architecture patterns
 
 The project is also intended to serve as a hands-on system for learning and demonstrating:
@@ -729,4 +807,5 @@ The project is also intended to serve as a hands-on system for learning and demo
 - prompt engineering for structured extraction
 - question answering over symbolic graph data
 - graph-aware application UI design
+- explainability and provenance design
 - modular Django application architecture

@@ -1,4 +1,5 @@
 import json
+from pprint import pprint
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
@@ -113,27 +114,59 @@ def ask_question(request, doc_id):
         qa_engine = QAEngine()
         result = qa_engine.answer_question(document, question)
 
+        
         context ={
                 "document": document,
                 "question": result["question"],
                 "answer": result["answer"],
                 "cypher": result["cypher"],
                 "rows": result["rows"],
+                "provenance": result.get("provenance", []),
                 "has_error": False,
             }
         
-        return render(request, "document_manager/components/qa_result.jinja", context=context)
-    except Exception as e:
-        context = {
-                "document": document,
-                "question": question,
-                "answer": str(e),
-                "cypher": "",
-                "rows": [],
-                "has_error": True,
-            }
+        pprint(context)
         
-        return render(request, "document_manager/components/qa_result.jinja", context=context)
+        response = render(request, "document_manager/components/qa_result.jinja", context=context)
+
+        response["HX-Trigger-After-Swap"] = json.dumps({
+            "qaGraphHighlight": result.get("highlight", {
+                "node_ids": [],
+                "edge_ids": [],
+                "focus": False,
+            })
+        })
+
+        return response
+
+
+    except Exception as e:
+        
+        context = {
+            "document": document,
+            "question": question,
+            "answer": str(e),
+            "cypher": "",
+            "rows": [],
+            "provenance": [],
+            "has_error": True,
+        }
+        
+        response = render(
+            request,
+            "document_manager/components/qa_result.jinja",
+            context=context,
+        )
+
+        response["HX-Trigger-After-Swap"] = json.dumps({
+            "qaGraphHighlight": {
+                "node_ids": [],
+                "edge_ids": [],
+                "focus": False,
+            }
+        })
+
+        return response
 
 @login_required
 def document_qa_page(request, doc_id):

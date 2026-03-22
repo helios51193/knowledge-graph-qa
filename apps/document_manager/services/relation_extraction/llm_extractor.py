@@ -131,7 +131,7 @@ class LlmRelationExtractor(BaseRelationExtractor):
     def _extract_with_ollama(self, prompt):
         host = getattr(settings, "OLLAMA_HOST", "localhost")
         port = getattr(settings, "OLLAMA_PORT", "11434")
-        model = getattr(settings, "OLLAMA_RELATION_MODEL", "llama3")
+        model = getattr(settings, "OLLAMA_RELATION_MODEL", "llama3.2")
 
         response = requests.post(
             f"http://{host}:{port}/api/generate",
@@ -145,6 +145,10 @@ class LlmRelationExtractor(BaseRelationExtractor):
             },
             timeout=getattr(settings, "RELATION_LLM_TIMEOUT", 90),
         )
+
+        if not response.ok:
+            print("Ollama status:", response.status_code)
+            print("Ollama body:", response.text)
 
         response.raise_for_status()
         data = response.json()

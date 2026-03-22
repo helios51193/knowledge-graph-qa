@@ -5,3 +5,4 @@ __pycache__
 .venv
 logs
 documents
+_test_documents
