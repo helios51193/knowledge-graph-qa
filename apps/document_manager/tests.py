@@ -9,6 +9,9 @@ from apps.auth_manager.models import User
 from apps.document_manager.models import Document, ProcessingLog
 from apps.document_manager.tasks import process_document
 from apps.document_manager.services.qa.qa_engine import QAEngine
+from apps.document_manager.services.chunking.chunk import Chunk
+from apps.document_manager.services.relation_extraction.heuristic_extractor import HeuristicRelationExtractor
+
 
 
 @override_settings(
@@ -100,6 +103,8 @@ class DocumentPipelineE2ETests(TestCase):
 
         self.assertIn("START", stages)
         self.assertIn("TEXT_EXTRACTION", stages)
+        self.assertIn("COREFERENCE", stages)
+        self.assertIn("ENTITY_RESOLUTION", stages)
         self.assertIn("NORMALIZATION", stages)
         self.assertIn("CHUNKING", stages)
         self.assertIn("ENTITY_EXTRACTION", stages)
@@ -249,3 +254,34 @@ class QAEngineTests(TestCase):
         self.assertEqual(result["cypher"], repaired_query)
         self.assertIn("Whisperwood", result["answer"])
 
+def test_heuristic_relation_extractor_uses_analysis_text_when_present(self):
+    extractor = HeuristicRelationExtractor()
+
+    chunk = Chunk(
+        chunk_id=0,
+        document_id=1,
+        text="Elarin entered Whisperwood. He lives in the village.",
+        start_index=0,
+        end_index=52,
+        analysis_text="Elarin entered Whisperwood. Elarin lives in the village.",
+    )
+
+    entities = [
+        {
+            "name": "Elarin",
+            "label": "Person",
+            "document_id": 1,
+            "chunk_id": 0,
+        },
+        {
+            "name": "Whisperwood",
+            "label": "Location",
+            "document_id": 1,
+            "chunk_id": 0,
+        },
+    ]
+
+    relations = extractor.extract([chunk], entities, llm="gpt4")
+
+    relation_types = {relation["type"] for relation in relations}
+    self.assertIn("LIVES_IN", relation_types)

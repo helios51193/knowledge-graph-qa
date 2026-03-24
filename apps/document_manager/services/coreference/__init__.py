@@ -1,0 +1,2 @@
+from .factory import get_coreference_resolver
+from .coreference_resolver import resolve_coreferences

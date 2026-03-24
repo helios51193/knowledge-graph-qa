@@ -1,5 +1,5 @@
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import inflect
 from rapidfuzz import fuzz
@@ -13,36 +13,61 @@ LABEL_THRESHOLDS = {
     "Location": 0.92,
     "Person": 0.95,
 }
+LABEL_PRIORITY = {
+    "Organization": 4,
+    "Location": 3,
+    "Person": 2,
+    "Concept": 1,
+}
+
 
 def resolve_entities(entities):
     """
     Returns:
-    - resolved_entities: entity list with canonical_name added
-    - canonical_map: maps raw (label, name) pairs to canonical names
+    - resolved_entities: entity list with canonical_name and canonical_label
+    - canonical_map: maps raw (label, name) pairs to canonical entity info
+    - label_summary: per canonical entity, counts of observed labels
     """
     grouped = defaultdict(list)
 
     for entity in entities:
         grouped[entity["label"]].append(entity)
 
+    clusters = []
+    for label, group in grouped.items():
+        clusters.extend(_cluster_entities(group, label))
+
+    merged_clusters = _merge_cross_label_clusters(clusters)
+
     canonical_map = {}
     resolved_entities = []
+    label_summary = {}
 
-    for label, group in grouped.items():
-        clusters = _cluster_entities(group, label)
+    for cluster in merged_clusters:
+        canonical_name = _choose_canonical_name(cluster)
+        canonical_label = _choose_canonical_label(cluster)
+        label_counts = _build_label_counts(cluster)
 
-        for cluster in clusters:
-            canonical_name = _choose_canonical_name(cluster)
+        label_summary[canonical_name] = label_counts
 
-            for entity in cluster:
-                key = (entity["label"], entity["name"])
-                canonical_map[key] = canonical_name
+        for entity in cluster:
+            key = (entity["label"], entity["name"])
 
-                enriched = dict(entity)
-                enriched["canonical_name"] = canonical_name
-                resolved_entities.append(enriched)
+            canonical_info = {
+                "canonical_name": canonical_name,
+                "canonical_label": canonical_label,
+                "label_counts": label_counts,
+            }
+            canonical_map[key] = canonical_info
 
-    return resolved_entities, canonical_map
+            enriched = dict(entity)
+            enriched["canonical_name"] = canonical_name
+            enriched["canonical_label"] = canonical_label
+            enriched["label_counts"] = label_counts
+            resolved_entities.append(enriched)
+
+    return resolved_entities, canonical_map, label_summary
+
 
 def apply_entity_resolution_to_relations(relations, canonical_map):
     resolved_relations = []
@@ -52,12 +77,22 @@ def apply_entity_resolution_to_relations(relations, canonical_map):
         target_key = (relation.get("target_label", "Entity"), relation["target"])
 
         normalized_relation = dict(relation)
-        normalized_relation["source"] = canonical_map.get(source_key, relation["source"])
-        normalized_relation["target"] = canonical_map.get(target_key, relation["target"])
+
+        source_info = canonical_map.get(source_key)
+        target_info = canonical_map.get(target_key)
+
+        if source_info:
+            normalized_relation["source"] = source_info["canonical_name"]
+            normalized_relation["source_label"] = source_info["canonical_label"]
+
+        if target_info:
+            normalized_relation["target"] = target_info["canonical_name"]
+            normalized_relation["target_label"] = target_info["canonical_label"]
 
         resolved_relations.append(normalized_relation)
 
     return resolved_relations
+
 
 def _cluster_entities(entities, label):
     clusters = []
@@ -76,17 +111,59 @@ def _cluster_entities(entities, label):
 
     return clusters
 
+
+def _merge_cross_label_clusters(clusters):
+    """
+    Merge clusters across labels when the names are strong matches.
+    This is what lets us reconcile:
+    - Moonkeep as Person
+    - Moonkeep as Organization
+    """
+    merged = []
+
+    for cluster in clusters:
+        placed = False
+
+        for existing in merged:
+            if _should_merge_clusters(cluster, existing):
+                existing.extend(cluster)
+                placed = True
+                break
+
+        if not placed:
+            merged.append(list(cluster))
+
+    return merged
+
+
 def _should_merge(entity, cluster, label):
     threshold = LABEL_THRESHOLDS.get(label, 0.95)
 
     scores = [
-        _entity_similarity(entity, other, label)
+        _entity_similarity(entity, other)
         for other in cluster
     ]
 
     return max(scores, default=0.0) >= threshold
 
-def _entity_similarity(left, right, label):
+
+def _should_merge_clusters(left_cluster, right_cluster):
+    scores = []
+
+    for left in left_cluster:
+        for right in right_cluster:
+            scores.append(_entity_similarity(left, right))
+
+    if not scores:
+        return False
+
+    best_score = max(scores)
+
+    # Be conservative when merging across labels.
+    return best_score >= 0.94
+
+
+def _entity_similarity(left, right):
     left_name = left["name"]
     right_name = right["name"]
 
@@ -116,18 +193,16 @@ def _entity_similarity(left, right, label):
         context_bonus
     )
 
-    # Be stricter for proper-name-like labels.
-    if label in {"Person", "Location", "Organization"}:
-        if _looks_like_plural_variant(left_norm, right_norm):
-            score += 0.05
+    if _looks_like_plural_variant(left_norm, right_norm):
+        score += 0.05
 
     return min(score, 1.0)
+
 
 def _normalize_surface(text):
     value = str(text or "").strip().lower()
     value = re.sub(r"[^a-z0-9\s\-']", " ", value)
     value = re.sub(r"\s+", " ", value).strip()
-
     value = re.sub(r"^(the|a|an)\s+", "", value)
     return value
 
@@ -140,7 +215,6 @@ def _singularize_phrase(text):
     if len(words) == 1:
         return _singularize_word(words[0])
 
-    # Only singularize the last word to reduce bad merges.
     words[-1] = _singularize_word(words[-1])
     return " ".join(words)
 
@@ -164,19 +238,13 @@ def _token_overlap(left, right):
 
 def _looks_like_plural_variant(left, right):
     return (
-        left == right + "s" or
-        right == left + "s" or
-        _singularize_phrase(left) == _singularize_phrase(right)
+        left == right + "s"
+        or right == left + "s"
+        or _singularize_phrase(left) == _singularize_phrase(right)
     )
 
 
 def _choose_canonical_name(cluster):
-    """
-    Prefer:
-    1. shortest clean name
-    2. singularized form if cluster is concept-like plural variants
-    3. stable title-cased variant
-    """
     names = [entity["name"].strip() for entity in cluster if entity.get("name")]
     if not names:
         return ""
@@ -190,6 +258,42 @@ def _choose_canonical_name(cluster):
     )
 
     return singular_candidate or canonical
+
+
+def _choose_canonical_label(cluster):
+    counts = Counter(
+        entity.get("label", "Concept")
+        for entity in cluster
+        if entity.get("label")
+    )
+
+    if not counts:
+        return "Concept"
+
+    return max(
+        counts.keys(),
+        key=lambda label: (counts[label], LABEL_PRIORITY.get(label, 0)),
+    )
+
+
+def _build_label_counts(cluster):
+    counts = {
+        "Organization": 0,
+        "Location": 0,
+        "Person": 0,
+        "Concept": 0,
+    }
+
+    observed = Counter(
+        entity.get("label", "Concept")
+        for entity in cluster
+        if entity.get("label")
+    )
+
+    for label, count in observed.items():
+        counts[label] = count
+
+    return counts
 
 
 def _restore_case(normalized_text, original_text):

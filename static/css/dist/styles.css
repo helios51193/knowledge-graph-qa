@@ -1616,9 +1616,6 @@
   .h-32 {
     height: calc(var(--spacing) * 32);
   }
-  .h-64 {
-    height: calc(var(--spacing) * 64);
-  }
   .h-\[600px\] {
     height: 600px;
   }
@@ -1630,9 +1627,6 @@
   }
   .min-h-\[65vh\] {
     min-height: 65vh;
-  }
-  .min-h-\[70vh\] {
-    min-height: 70vh;
   }
   .min-h-\[500px\] {
     min-height: 500px;

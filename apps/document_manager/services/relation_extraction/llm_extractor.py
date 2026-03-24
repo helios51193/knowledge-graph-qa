@@ -19,8 +19,10 @@ class LlmRelationExtractor(BaseRelationExtractor):
             if len(chunk_entities) < 2:
                 continue
 
+            analysis_text = chunk.analysis_text or chunk.text
+
             raw_relations = self._extract_chunk_relations(
-                text=chunk.text,
+                text=analysis_text,
                 entities=chunk_entities,
                 llm=llm,
             )

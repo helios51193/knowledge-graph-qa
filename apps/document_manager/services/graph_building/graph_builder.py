@@ -6,19 +6,22 @@ def build_graph(entities, relations):
 
     for entity in entities:
         entity_name = entity.get("canonical_name", entity["name"])
+        entity_label = entity.get("canonical_label", entity["label"])
         key = (
             entity["document_id"],
             entity_name.strip().lower(),
-            entity["label"].strip(),
+            entity_label.strip(),
         )
 
         if key in node_index:
             continue
 
         node = {
-            "id": f'{entity["document_id"]}:{entity["label"]}:{entity_name}',
-            "name": entity["name"],
-            "label": entity["label"],
+            "id": f'{entity["document_id"]}:{entity_label}:{entity_name}',
+            "name": entity_name,
+            "original_name": entity["name"],
+            "label": entity_label,
+            "label_counts": entity.get("label_counts", {}),
             "document_id": entity["document_id"],
             "chunk_id": entity.get("chunk_id"),
             "start_index": entity.get("start_index"),
@@ -45,8 +48,8 @@ def build_graph(entities, relations):
         if edge_key in edge_index:
             continue
 
-        source_node = _find_node(nodes, relation["document_id"], relation["source"])
-        target_node = _find_node(nodes, relation["document_id"], relation["target"])
+        source_node = _find_node(nodes, relation["document_id"], relation["source"], relation.get("source_label"),)
+        target_node = _find_node(nodes, relation["document_id"], relation["target"], relation.get("target_label"),)
 
         if source_node is None or target_node is None:
             continue
@@ -86,14 +89,20 @@ def build_graph(entities, relations):
     }
 
 
-def _find_node(nodes, document_id, name):
+def _find_node(nodes, document_id, name, label=None):
     normalized_name = name.strip().lower()
+    normalized_label = label.strip() if label else None
 
     for node in nodes:
-        if (
-            node["document_id"] == document_id
-            and node["name"].strip().lower() == normalized_name
-        ):
-            return node
+        if node["document_id"] != document_id:
+            continue
+
+        if node["name"].strip().lower() != normalized_name:
+            continue
+
+        if normalized_label and node["label"].strip() != normalized_label:
+            continue
+
+        return node
 
     return None

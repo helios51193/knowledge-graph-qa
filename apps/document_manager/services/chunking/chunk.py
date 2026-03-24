@@ -9,3 +9,4 @@ class Chunk:
     text: str
     start_index: int
     end_index: int
+    analysis_text: str | None = None

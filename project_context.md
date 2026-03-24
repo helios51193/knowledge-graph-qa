@@ -24,6 +24,7 @@ This project is a Django-based knowledge graph question-answering platform built
 
 - document ingestion
 - entity and relation extraction
+- coreference resolution
 - entity normalization
 - graph generation
 - graph persistence in Django and Memgraph
@@ -46,6 +47,7 @@ The overall architecture follows a Graph-RAG style workflow:
 
 Document  
 -> Text processing  
+-> Coreference resolution  
 -> Entity and relation extraction  
 -> Entity normalization  
 -> Graph generation  
@@ -118,6 +120,7 @@ The main implementation currently lives in `document_manager`, which contains:
 Service modules are organized by responsibility, including:
 
 - `services/extraction`
+- `services/coreference`
 - `services/normalization`
 - `services/chunking`
 - `services/entity_extraction`
@@ -200,9 +203,11 @@ Typical stages include:
 - START
 - TEXT_EXTRACTION
 - NORMALIZATION
+- COREFERENCE
 - CHUNKING
 - ENTITY_EXTRACTION
 - RELATION_EXTRACTION
+- ENTITY_RESOLUTION
 - GRAPH_BUILDING
 - GRAPH_DATABASE
 - COMPLETE
@@ -282,10 +287,11 @@ User clicks Process
 -> Django marks document as processing  
 -> Celery task starts  
 -> Text is extracted and normalized  
+-> Coreference resolution is applied to document text  
 -> Text is chunked  
--> Entities are extracted  
--> Relations are extracted  
--> Entities are normalized  
+-> Entities are extracted from original chunks  
+-> Relations are extracted using coreference-aware analysis text  
+-> Entities are normalized and labels reconciled across mentions  
 -> Graph is built  
 -> Graph is saved to `graph_data`  
 -> Counts are updated on the `Document` model  
@@ -319,10 +325,11 @@ The current ingestion pipeline is:
 Document Upload  
 -> Text Extraction  
 -> Text Normalization  
+-> Coreference Resolution  
 -> Text Chunking  
--> Entity Extraction  
--> Relation Extraction  
--> Entity Normalization  
+-> Entity Extraction on original chunk text  
+-> Relation Extraction on coreference-aware analysis text  
+-> Entity Resolution / Label Reconciliation  
 -> Graph Building  
 -> Save Graph Data to Django  
 -> Insert Graph into Memgraph
@@ -385,8 +392,42 @@ Chunk objects include:
 - `text`
 - `start_index`
 - `end_index`
+- `analysis_text` (optional)
+
+`text` is the original chunk text used for provenance.
+
+`analysis_text` is an optional alternate text used for downstream analysis, such as coreference-aware relation extraction, while preserving original source evidence.
 
 This metadata is carried forward into extraction results.
+
+---
+
+# Coreference Resolution
+
+The project now includes a dedicated coreference stage in the processing pipeline.
+
+Current implementation:
+
+- factory-based resolver structure under `services/coreference`
+- configurable resolver selection via Django settings
+- `noop` resolver for no-op behavior
+- `fastcoref` resolver for ML-based coreference resolution
+
+The current coreference output shape includes:
+
+- `original_text`
+- `resolved_text`
+- `clusters`
+
+Coreference is currently used primarily to improve relation extraction rather than entity extraction.
+
+Current design choice:
+
+- entity extraction runs on the original chunk text
+- relation extraction can run on `analysis_text`, which is derived from the coreference-resolved document text
+- provenance remains tied to original chunk text
+
+This design improves relation recall while keeping source evidence more faithful to the original document.
 
 ---
 
@@ -484,23 +525,55 @@ Relation output includes:
 - `end_index`
 - `source_text`
 
+The relation extraction stage now supports using a chunk's `analysis_text` when available, while still preserving the original `text` as provenance.
+
 ---
 
-# Entity Normalization
+# Entity Normalization And Label Reconciliation
 
-The project is now introducing a dedicated entity normalization step between extraction and graph building.
+The project now includes a dedicated entity resolution stage between extraction and graph building.
 
 The motivation is to reduce duplicate graph nodes caused by surface-form variation, such as:
 
 - singular vs plural forms
 - simple lexical variants
 - lightly different surface mentions referring to the same concept
+- the same entity being assigned different labels across chunks
 
-The intended normalization direction is:
+Current normalization / resolution behavior:
 
-- use scoring-based matching rather than hardcoded merge rules only
-- prefer deterministic NLP and string similarity methods over heavy LLM usage
-- preserve original extracted forms while assigning canonical names for graph merging
+- scoring-based matching using deterministic NLP / string similarity
+- `inflect`-based singularization support
+- `RapidFuzz` string similarity
+- token overlap and surface normalization
+- cross-label cluster merging for strong matches
+- canonical name selection
+- canonical label selection using majority counts plus priority tie-breaks
+- per-entity label count summaries
+
+The current label reconciliation behavior is intended to handle cases where one surface name may be identified as multiple types, for example:
+
+- `Moonkeep` as both `Person` and `Organization`
+
+In those cases, the resolver now:
+
+- merges strong name matches across labels
+- counts observed labels in the merged cluster
+- selects a canonical label
+- rewrites entities and relations to use the canonical name and canonical label
+
+The resolver also produces a label summary dictionary per canonical entity, for example:
+
+```json
+{
+  "Moonkeep": {
+    "Organization": 4,
+    "Location": 0,
+    "Person": 1,
+    "Concept": 0
+  }
+}
+```
 
 This stage is especially important for concept-like entities, where duplicate isolated nodes can otherwise degrade graph quality and QA quality.
 
@@ -515,7 +588,10 @@ The graph builder currently:
 - deduplicates nodes
 - deduplicates edges
 - assigns a stable node id shape
+- uses canonical names and canonical labels after resolution
 - preserves provenance metadata
+- stores original names where useful
+- stores label count metadata on nodes
 - produces node and edge collections
 - computes graph counts
 
@@ -527,7 +603,14 @@ The resulting graph structure looks like:
     {
       "id": "3:Location:Whisperwood",
       "name": "Whisperwood",
+      "original_name": "Whisperwood",
       "label": "Location",
+      "label_counts": {
+        "Organization": 0,
+        "Location": 3,
+        "Person": 0,
+        "Concept": 0
+      },
       "document_id": 3,
       "provenance": {
         "chunk_id": 0,
@@ -728,7 +811,9 @@ Current testing priorities include:
 
 - pipeline completion and document field updates
 - processing log creation
+- coreference and entity-resolution stage coverage
 - graph generation correctness
+- relation extraction behavior when `analysis_text` is present
 - QA query generation and repair behavior
 - provenance and highlight payload generation
 
@@ -743,6 +828,7 @@ Implemented strengths include:
 - modular pipeline design
 - pluggable extractor/factory pattern
 - support for heuristic and LLM extraction
+- dedicated coreference stage with factory-based resolver structure
 - graph serialization into Django
 - Memgraph insertion
 - natural-language question answering over the graph
@@ -753,6 +839,7 @@ Implemented strengths include:
 - integrated graph visualization using Cytoscape.js
 - graph highlighting tied to QA output
 - provenance-aware answer evidence
+- scoring-based entity resolution and label reconciliation
 
 ---
 
@@ -763,7 +850,8 @@ Important current limitations include:
 - extraction quality still depends heavily on document style and chunk quality
 - heuristic extraction remains brittle across very different domains
 - LLM extraction may still produce incomplete or imperfect graph structure
-- normalization and canonicalization are still evolving
+- normalization, coreference, and canonicalization are still evolving
+- second-person and dialogue-heavy pronouns remain difficult for coreference resolution
 - QA may return shallow answers if the graph itself is sparse
 - query repair currently handles execution errors, but not yet weak or empty-result recovery
 - graph clearing behavior should be used carefully in multi-document scenarios
@@ -776,6 +864,7 @@ Important current limitations include:
 Likely next improvements are:
 
 - strengthen scoring-based entity normalization
+- improve coreference robustness and chunk alignment behavior
 - improve provenance snippet quality and UI presentation
 - add empty-but-suspicious QA result recovery
 - add better QA thread persistence
