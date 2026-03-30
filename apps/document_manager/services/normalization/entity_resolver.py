@@ -47,6 +47,8 @@ def resolve_entities(entities):
         canonical_name = _choose_canonical_name(cluster)
         canonical_label = _choose_canonical_label(cluster)
         label_counts = _build_label_counts(cluster)
+        aliases = _build_aliases(cluster)
+
 
         label_summary[canonical_name] = label_counts
 
@@ -57,6 +59,7 @@ def resolve_entities(entities):
                 "canonical_name": canonical_name,
                 "canonical_label": canonical_label,
                 "label_counts": label_counts,
+                "aliases":aliases
             }
             canonical_map[key] = canonical_info
 
@@ -64,10 +67,18 @@ def resolve_entities(entities):
             enriched["canonical_name"] = canonical_name
             enriched["canonical_label"] = canonical_label
             enriched["label_counts"] = label_counts
+            enriched["aliases"] = aliases
             resolved_entities.append(enriched)
 
     return resolved_entities, canonical_map, label_summary
 
+
+def _build_aliases(cluster):
+    return sorted({
+        entity["name"].strip()
+        for entity in cluster
+        if entity.get("name") and entity["name"].strip()
+    })
 
 def apply_entity_resolution_to_relations(relations, canonical_map):
     resolved_relations = []

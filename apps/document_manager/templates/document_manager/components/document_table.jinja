@@ -32,7 +32,7 @@
                     <td> {{ doc.llm_used }} </td>
                     <td>
                         {% if doc.processing_time %}
-                            {{ doc.processing_time }} s
+                            {{ "%.2f"|format(doc.processing_time) }} s
                         {% else %}
                             -
                         {% endif %}
@@ -41,7 +41,16 @@
                         {% if doc.status == "pending" %}
                             <span class="badge badge-warning">Pending</span>
                         {% elif doc.status == "processing" %}
-                            <progress class="progress progress-primary w-24"></progress>
+                            <div class="w-40">
+                                <progress
+                                    class="progress progress-primary w-full"
+                                    value="{{ doc.progress }}"
+                                    max="100"
+                                ></progress>
+                                <div class="mt-1 text-xs opacity-70">
+                                    {{ doc.progress }}%
+                                </div>
+                            </div>
                         {% elif doc.status == "complete" %}
                             <span class="badge badge-success">Complete</span>
                         {% elif doc.status == "error" %}
@@ -49,13 +58,30 @@
                         {% endif %}
                     </td>
                     <td class="space-x-2">
-                        <button class="btn btn-sm btn-primary" hx-post="{{url('document_manager:process_document', args=[doc.id])}}" hx-swap="none">
+                        <button class="btn btn-sm btn-primary" 
+                            hx-post="{{url('document_manager:process_document', args=[doc.id])}}" 
+                            hx-swap="none" {% if doc.status == "processing" %}disabled{% endif %} >
                             Process
                         </button>
-                        <button class="btn btn-sm btn-error" hx-delete="{{url('document_manager:delete_document', args=[doc.id])}}" hx-swap="none" > 
+                        <button class="btn btn-sm btn-error" 
+                                hx-delete="{{url('document_manager:delete_document', args=[doc.id])}}" 
+                                hx-swap="none" {% if doc.status == "processing" %}disabled{% endif %} > 
                             Delete 
                         </button>
-                        <a  class="btn btn-sm btn-primary" href="{{ url('document_manager:qa_page', kwargs={'doc_id':doc.id }) }}" > Open QA </a>
+                        {% if doc.status == "complete" %}
+                                <a
+                                class="btn btn-sm btn-outline"
+                                href="{{ url('document_manager:qa_sessions', kwargs={'doc_id': doc.id}) }}">
+                                Open QA
+                                </a>
+                        {% else %}
+                            <span
+                                class="btn btn-sm btn-disabled opacity-60 cursor-not-allowed"
+                                title="Process the document before opening QA"
+                            >
+                                Open QA
+                            </span>
+                        {% endif %}
                     </td>
 
                 </tr>

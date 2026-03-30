@@ -20,6 +20,7 @@ def build_graph(entities, relations):
             "id": f'{entity["document_id"]}:{entity_label}:{entity_name}',
             "name": entity_name,
             "original_name": entity["name"],
+            "aliases": entity.get("aliases", [entity["name"]]),
             "label": entity_label,
             "label_counts": entity.get("label_counts", {}),
             "document_id": entity["document_id"],

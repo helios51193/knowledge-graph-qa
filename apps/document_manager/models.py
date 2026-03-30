@@ -78,3 +78,52 @@ class ProcessingLog(models.Model):
     
     class Meta:
         ordering = ["created_at"]
+
+
+class QASession(models.Model):
+    document = models.ForeignKey(
+        "Document",
+        on_delete=models.CASCADE,
+        related_name="qa_sessions",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="qa_sessions",
+    )
+    title = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title or f"Session {self.id} - {self.document.name}"
+    class Meta:
+        ordering = ["-updated_at"]
+
+class QAMessage(models.Model):
+    ROLE_USER = "user"
+    ROLE_ASSISTANT = "assistant"
+
+    ROLE_CHOICES = [
+        (ROLE_USER, "User"),
+        (ROLE_ASSISTANT, "Assistant"),
+    ]
+
+    session = models.ForeignKey(
+        "QASession",
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    content = models.TextField()
+    cypher = models.TextField(blank=True)
+    query_rows = models.JSONField(default=list, blank=True)
+    provenance = models.JSONField(default=list, blank=True)
+    highlight = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.session_id} - {self.role}"
+
+    class Meta:
+        ordering = ["created_at"]

@@ -4,7 +4,7 @@ import re
 import requests
 from django.conf import settings
 from openai import OpenAI
-
+from rapidfuzz import fuzz
 from .base import BaseRelationExtractor
 
 class LlmRelationExtractor(BaseRelationExtractor):
@@ -48,11 +48,13 @@ class LlmRelationExtractor(BaseRelationExtractor):
         return relations
     
     def _get_chunk_entities(self, chunk, entities):
+        source_chunk_ids = chunk.source_chunk_ids or [chunk.chunk_id]
+        
         return [
             entity
             for entity in entities
-            if entity.get("chunk_id") == chunk.chunk_id
-            and entity.get("document_id") == chunk.document_id
+            if entity.get("document_id") == chunk.document_id
+            and entity.get("chunk_id") in source_chunk_ids
         ]
     
     def _extract_chunk_relations(self, text, entities, llm):
@@ -103,6 +105,10 @@ class LlmRelationExtractor(BaseRelationExtractor):
                 - Relation type must be uppercase with underscores.
                 - Only return relationships clearly supported by the text.
                 - If there are no relations, return {{"relations": []}}.
+                - Use the closest matching provided entity names exactly.
+                - If the text uses a pronoun or resolved reference, map it to the corresponding provided entity name.
+                - Prefer returning all clearly supported relationships, not just one.
+                - If a relation spans two nearby sentences in the same chunk, you may still extract it if it is clearly supported.
 
                 Text:
                 \"\"\"
@@ -205,18 +211,19 @@ class LlmRelationExtractor(BaseRelationExtractor):
         if source == target:
             return None
 
-        entity_index = {entity["name"]: entity for entity in chunk_entities}
+        source_entity = self._resolve_entity_name(source, chunk_entities)
+        target_entity = self._resolve_entity_name(target, chunk_entities)
 
-        if source not in entity_index or target not in entity_index:
+        if source_entity is None or target_entity is None:
             return None
 
         relation_type = relation_type.upper().replace(" ", "_")
 
         return {
-            "source": source,
-            "source_label": entity_index[source]["label"],
-            "target": target,
-            "target_label": entity_index[target]["label"],
+            "source": source_entity["name"],
+            "source_label": source_entity["label"],
+            "target": target_entity["name"],
+            "target_label": target_entity["label"],
             "type": relation_type,
             "document_id": chunk.document_id,
             "chunk_id": chunk.chunk_id,
@@ -224,3 +231,45 @@ class LlmRelationExtractor(BaseRelationExtractor):
             "end_index": chunk.end_index,
             "source_text": chunk.text,
         }
+
+    def _resolve_entity_name(self, candidate_name, chunk_entities):
+        candidate_norm = self._normalize_surface(candidate_name)
+
+        if not candidate_norm:
+            return None
+
+        for entity in chunk_entities:
+            if self._normalize_surface(entity["name"]) == candidate_norm:
+                return entity
+
+        best_entity = None
+        best_score = 0.0
+
+        for entity in chunk_entities:
+            entity_norm = self._normalize_surface(entity["name"])
+            score = fuzz.token_sort_ratio(candidate_norm, entity_norm) / 100.0
+
+            if score > best_score:
+                best_score = score
+                best_entity = entity
+
+            for alias in entity.get("aliases", []):
+                alias_norm = self._normalize_surface(alias)
+                alias_score = fuzz.token_sort_ratio(candidate_norm, alias_norm) / 100.0
+
+                if alias_score > best_score:
+                    best_score = alias_score
+                    best_entity = entity
+
+        if best_score >= 0.90:
+            return best_entity
+
+        return None
+
+
+    def _normalize_surface(self, text):
+        text = str(text or "").strip().lower()
+        text = re.sub(r"[^a-z0-9\s\-']", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        text = re.sub(r"^(the|a|an)\s+", "", text)
+        return text

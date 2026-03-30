@@ -8,9 +8,21 @@
 
         <form
             hx-post="{{url('document_manager:upload_document')}}"
-            hx-swap="none"
+            hx-target="#modal-container"
+            hx-swap="innerHTML"
             enctype="multipart/form-data"
             class="space-y-4">
+            {% if form.errors %}
+                <div class="alert alert-error">
+                    <ul class="text-sm">
+                        {% for field, errors in form.errors.items() %}
+                            {% for error in errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
 
             <fieldset class="fieldset">
                 <legend class="fieldset-legend">Document Name</legend>

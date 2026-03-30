@@ -1,0 +1,51 @@
+{% extends "document_manager/base.jinja" %}
+
+{% block title %}
+QA Sessions - {{ document.name }}
+{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+    <div>
+        <h1 class="text-3xl font-bold">QA Conversations</h1>
+        <p class="text-sm opacity-70">
+            Choose an existing conversation or start a new one for "{{ document.name }}"
+        </p>
+    </div>
+
+    <a href="{{ url('document_manager:dashboard') }}" class="btn btn-outline">
+        Back To Dashboard
+    </a>
+</div>
+
+<div class="card border border-base-300 bg-base-100 shadow-sm">
+    <div class="card-body space-y-4">
+        <form method="post" action="{{ url('document_manager:create_qa_session', kwargs={'doc_id': document.id}) }}">
+            {% csrf_token %}
+            <button class="btn btn-primary" type="submit">
+                Start New Conversation
+            </button>
+        </form>
+
+        {% if sessions %}
+            <div class="space-y-3">
+                {% for session in sessions %}
+                    <a
+                        href="{{ url('document_manager:qa_page', kwargs={'doc_id': document.id, 'session_id': session.id}) }}"
+                        class="block rounded-xl border border-base-300 p-4 hover:bg-base-200/40 transition"
+                    >
+                        <div class="font-semibold">{{ session.title or "Untitled Conversation" }}</div>
+                        <div class="text-sm opacity-70">
+                            Updated {{ session.updated_at }}
+                        </div>
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="rounded-xl border border-dashed border-base-300 p-6 text-sm opacity-70">
+                No saved conversations yet.
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

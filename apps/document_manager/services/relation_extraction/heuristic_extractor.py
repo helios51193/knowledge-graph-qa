@@ -12,8 +12,28 @@ class HeuristicRelationExtractor(BaseRelationExtractor):
         ("located in", "LOCATED_IN"),
         ("based in", "LOCATED_IN"),
         ("lives in", "LIVES_IN"),
+        ("lived in", "LIVES_IN"),
+        ("resides in", "LIVES_IN"),
+        ("stays in", "LIVES_IN"),
         ("born in", "BORN_IN"),
         ("part of", "PART_OF"),
+        ("belongs to", "BELONGS_TO"),
+        ("member of", "MEMBER_OF"),
+        ("leader of", "LEADS"),
+        ("rules", "RULES"),
+        ("governs", "RULES"),
+        ("owns", "OWNS"),
+        ("holds", "OWNS"),
+        ("carries", "CARRIES"),
+        ("travels to", "TRAVELS_TO"),
+        ("went to", "TRAVELS_TO"),
+        ("arrived at", "ARRIVED_AT"),
+        ("met", "MET"),
+        ("allied with", "ALLIED_WITH"),
+        ("fought", "FOUGHT"),
+        ("fought against", "FOUGHT"),
+        ("enemy of", "ENEMY_OF"),
+        ("mentor of", "MENTORS"),
     ]
 
     def extract(self, chunks, entities, llm):
@@ -25,7 +45,8 @@ class HeuristicRelationExtractor(BaseRelationExtractor):
             if len(chunk_entities) < 2:
                 continue
 
-            text_lower = chunk.text.lower()
+            analysis_text = chunk.analysis_text or chunk.text
+            text_lower = analysis_text.lower()
 
             for relation_phrase, relation_type in self.RELATION_PATTERNS:
                 if relation_phrase not in text_lower:
@@ -58,11 +79,12 @@ class HeuristicRelationExtractor(BaseRelationExtractor):
 
 
     def _get_chunk_entities(self, chunk, entities):
+        source_chunk_ids = chunk.source_chunk_ids or [chunk.chunk_id]
         return [
             entity
             for entity in entities
-            if entity.get("chunk_id") == chunk.chunk_id
-            and entity.get("document_id") == chunk.document_id
+            if entity.get("document_id") == chunk.document_id
+            and entity.get("chunk_id") in source_chunk_ids
         ]
     
     def _pair_entities(self, chunk_entities):

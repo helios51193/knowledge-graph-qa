@@ -35,10 +35,12 @@ Users can:
 
 - sign up and log in
 - upload documents
+- validate LLM availability before upload completes
 - process documents asynchronously
 - generate a graph from unstructured text
 - store that graph both in `graph_data` and Memgraph
 - open a dedicated QA page for a processed document
+- choose an existing QA conversation or start a new one
 - ask natural language questions against that document graph
 - view and interact with the graph while querying it
 - inspect provenance for graph elements and QA evidence
@@ -71,6 +73,7 @@ Document
 - Tailwind CSS
 - DaisyUI
 - Cytoscape.js for graph visualization
+- Mermaid for lightweight architecture / pipeline diagrams in documentation
 
 ## Graph Database
 
@@ -159,6 +162,7 @@ Responsibilities include:
 - graph persistence
 - question answering over the generated graph
 - graph-aware QA UI
+- saved QA conversation management
 
 Documents are scoped to users at the application layer, so each user sees only their own uploaded documents.
 
@@ -184,6 +188,45 @@ Important fields include:
 - `created_at` - upload timestamp
 
 The `graph_data` field acts as the Django-side serialized version of the document graph and is also used to drive the graph viewer on the QA page.
+
+---
+
+# QA Session Models
+
+The project now stores QA conversations in the database.
+
+## `QASession`
+
+Represents one saved conversation thread for a document.
+
+Important fields include:
+
+- `document`
+- `user`
+- `title`
+- `created_at`
+- `updated_at`
+
+## `QAMessage`
+
+Represents one user or assistant turn inside a QA session.
+
+Important fields include:
+
+- `session`
+- `role`
+- `content`
+- `cypher`
+- `query_rows`
+- `provenance`
+- `highlight`
+- `created_at`
+
+This allows the system to:
+
+- resume past conversations
+- audit generated Cypher and result rows
+- keep graph highlighting metadata tied to each assistant turn
 
 ---
 
@@ -226,6 +269,7 @@ Current UI surfaces include:
 - dashboard
 - upload modal
 - document table
+- QA session picker
 - dedicated QA page
 
 ## Dashboard
@@ -235,9 +279,22 @@ The dashboard currently supports:
 - listing uploaded documents
 - showing node/edge/relation counts
 - showing process status
+- showing processing percentage
 - starting document processing
 - deleting documents
 - opening a dedicated QA page for a selected document
+
+The upload modal now also performs validation to ensure the selected LLM is available before a document is accepted.
+
+## QA Session Picker
+
+The QA flow now includes a session picker page per document.
+
+This page supports:
+
+- listing previous conversations for a document
+- creating a new conversation
+- reopening an older saved conversation
 
 ## Dedicated QA Page
 
@@ -276,6 +333,7 @@ The upload flow works as follows:
 
 User opens upload modal  
 -> User submits document form  
+-> Django validates selected LLM availability  
 -> Django stores file and metadata  
 -> Dashboard refreshes document list
 
@@ -285,6 +343,7 @@ The processing flow works as follows:
 
 User clicks Process  
 -> Django marks document as processing  
+-> Document progress starts from 0 and updates during pipeline execution  
 -> Celery task starts  
 -> Text is extracted and normalized  
 -> Coreference resolution is applied to document text  
@@ -302,7 +361,9 @@ User clicks Process
 
 The QA flow currently works as follows:
 
-User opens the QA page for a document  
+User opens the QA session picker for a document  
+-> User chooses an existing conversation or starts a new one  
+-> User opens the QA page for that session  
 -> User asks a natural language question  
 -> QA engine builds graph schema context from `graph_data`  
 -> LLM generates a read-only Cypher query  
@@ -315,6 +376,7 @@ User opens the QA page for a document
 -> The answer is appended to the chat thread  
 -> The graph highlights the relevant subgraph  
 -> Source evidence is shown in the QA response and is also inspectable from graph clicks
+-> The user and assistant turns are saved to the QA session for future retrieval
 
 ---
 
@@ -335,6 +397,27 @@ Document Upload
 -> Insert Graph into Memgraph
 
 This pipeline is implemented as a set of service modules.
+
+## Pipeline Diagram
+
+```mermaid
+flowchart LR
+    A["Uploaded Document"] --> B["Text Extraction"]
+    B --> C["Text Normalization"]
+    C --> D["Chunking (Original Chunks)"]
+    C --> E["Coreference Resolution"]
+    E --> F["Analysis Chunks / Relation Chunks"]
+    D --> G["Entity Extraction"]
+    F --> H["Relation Extraction"]
+    G --> I["Entity Resolution + Label Reconciliation"]
+    H --> I
+    I --> J["Graph Building"]
+    J --> K["Save graph_data in Django"]
+    J --> L["Insert Graph into Memgraph"]
+    K --> M["QA Sessions + QA Engine"]
+    L --> M
+    M --> N["Cypher + Answer + Highlight + Provenance"]
+```
 
 ---
 
@@ -393,10 +476,13 @@ Chunk objects include:
 - `start_index`
 - `end_index`
 - `analysis_text` (optional)
+- `source_chunk_ids` (optional)
 
 `text` is the original chunk text used for provenance.
 
 `analysis_text` is an optional alternate text used for downstream analysis, such as coreference-aware relation extraction, while preserving original source evidence.
+
+`source_chunk_ids` is used when a relation-analysis window combines adjacent chunks, allowing the system to keep track of which original chunks contributed to a broader relation context.
 
 This metadata is carried forward into extraction results.
 
@@ -425,6 +511,7 @@ Current design choice:
 
 - entity extraction runs on the original chunk text
 - relation extraction can run on `analysis_text`, which is derived from the coreference-resolved document text
+- relation extraction can operate on chunk-local or adjacent-chunk analysis windows
 - provenance remains tied to original chunk text
 
 This design improves relation recall while keeping source evidence more faithful to the original document.
@@ -527,6 +614,12 @@ Relation output includes:
 
 The relation extraction stage now supports using a chunk's `analysis_text` when available, while still preserving the original `text` as provenance.
 
+The current direction also includes:
+
+- broader heuristic relation coverage
+- improved LLM relation prompts for multi-sentence local context
+- endpoint repair so near-match entity names from the LLM are mapped back to known chunk entities instead of being dropped
+
 ---
 
 # Entity Normalization And Label Reconciliation
@@ -550,6 +643,7 @@ Current normalization / resolution behavior:
 - canonical name selection
 - canonical label selection using majority counts plus priority tie-breaks
 - per-entity label count summaries
+- alias collection across merged mentions
 
 The current label reconciliation behavior is intended to handle cases where one surface name may be identified as multiple types, for example:
 
@@ -561,6 +655,7 @@ In those cases, the resolver now:
 - counts observed labels in the merged cluster
 - selects a canonical label
 - rewrites entities and relations to use the canonical name and canonical label
+- stores known aliases for the canonical entity
 
 The resolver also produces a label summary dictionary per canonical entity, for example:
 
@@ -591,6 +686,7 @@ The graph builder currently:
 - uses canonical names and canonical labels after resolution
 - preserves provenance metadata
 - stores original names where useful
+- stores aliases on graph nodes
 - stores label count metadata on nodes
 - produces node and edge collections
 - computes graph counts
@@ -604,6 +700,7 @@ The resulting graph structure looks like:
       "id": "3:Location:Whisperwood",
       "name": "Whisperwood",
       "original_name": "Whisperwood",
+      "aliases": ["Whisperwood", "the Whisperwood"],
       "label": "Location",
       "label_counts": {
         "Organization": 0,
@@ -711,6 +808,7 @@ It is responsible for:
 - generating a natural-language answer from result rows
 - building graph highlight payloads from query results
 - building provenance payloads from highlighted graph elements
+- operating within saved QA sessions through the view layer
 
 ## QA Design Principles
 
@@ -756,6 +854,7 @@ Current capabilities:
 - fade non-relevant graph elements during answer focus
 - zoom to the relevant subgraph when highlighting is applied
 - allow clicking nodes and edges to inspect provenance
+- preserve graph interaction while reloading saved conversations
 
 The graph panel is now an interactive companion to the QA thread rather than a passive visualization.
 
@@ -772,6 +871,7 @@ Current provenance behavior:
 - graph nodes and edges store provenance in `graph_data`
 - QA answers surface source evidence derived from the highlighted graph elements
 - clicking graph elements allows inspection of their provenance in the UI
+- assistant QA turns store provenance and highlight payloads for later retrieval
 
 This gives the project a stronger explainability story and supports more production-ready auditing behavior.
 
@@ -816,6 +916,7 @@ Current testing priorities include:
 - relation extraction behavior when `analysis_text` is present
 - QA query generation and repair behavior
 - provenance and highlight payload generation
+- QA session persistence and reload behavior
 
 ---
 
@@ -836,10 +937,13 @@ Implemented strengths include:
 - Cypher repair on query execution failure
 - more natural answer tone while remaining grounded
 - dedicated document QA page
+- saved QA conversation threads per document
 - integrated graph visualization using Cytoscape.js
 - graph highlighting tied to QA output
 - provenance-aware answer evidence
 - scoring-based entity resolution and label reconciliation
+- upload-time LLM availability validation
+- progress-aware document processing UI
 
 ---
 
@@ -852,6 +956,7 @@ Important current limitations include:
 - LLM extraction may still produce incomplete or imperfect graph structure
 - normalization, coreference, and canonicalization are still evolving
 - second-person and dialogue-heavy pronouns remain difficult for coreference resolution
+- relation density still depends heavily on chunking quality and local context windows
 - QA may return shallow answers if the graph itself is sparse
 - query repair currently handles execution errors, but not yet weak or empty-result recovery
 - graph clearing behavior should be used carefully in multi-document scenarios
@@ -865,9 +970,10 @@ Likely next improvements are:
 
 - strengthen scoring-based entity normalization
 - improve coreference robustness and chunk alignment behavior
+- expand adjacent-chunk and multi-hop relation coverage
 - improve provenance snippet quality and UI presentation
 - add empty-but-suspicious QA result recovery
-- add better QA thread persistence
+- improve QA thread UX and session management
 - expand automated test coverage
 - improve multi-document graph coexistence
 - add confidence scoring and merge reasons for normalization

@@ -19,7 +19,7 @@ from django.shortcuts import redirect
 from django.urls import path, include
 
 def root_redirect(request):
-    return redirect('apps.auth_manager:auth_login')
+    return redirect("auth_manager:auth_login")
 
 urlpatterns = [
     path("", root_redirect),
