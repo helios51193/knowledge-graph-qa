@@ -981,6 +981,164 @@ Likely next improvements are:
 
 ---
 
+# Final Roadmap To Completion
+
+The project is now at a stage where it already demonstrates a strong end-to-end Graph-RAG workflow.
+
+A good final roadmap is to finish a small number of high-impact improvements rather than endlessly broadening the scope.
+
+## Must-Have Before Stopping
+
+These are the most valuable remaining improvements if the goal is to end with a strong, portfolio-worthy, production-minded project.
+
+### 1. Stronger Chunking
+
+Add at least one more advanced chunking strategy beyond the current word / sentence / paragraph options.
+
+Preferred directions:
+
+- recursive chunking
+- hierarchical chunking
+- paragraph-first with sentence fallback
+- token-budget-aware chunking
+
+Why this matters:
+
+- chunk boundaries strongly affect relation recall
+- better chunking improves graph density and QA quality
+- it shows awareness that pipeline quality depends on preprocessing, not only prompts
+
+### 2. More Complex QA Intents
+
+Extend QA beyond identity-style questions such as:
+
+- `What is X?`
+- `Who is X?`
+- `What can you tell me about X?`
+
+The next useful question classes are:
+
+- relationship questions: `How are X and Y related?`
+- neighborhood questions: `Who is connected to X?`
+- list questions: `What locations are associated with X?`
+- aggregation questions: `Which entities are most central?`
+
+Why this matters:
+
+- it pushes the project from lookup-style QA toward graph-native reasoning
+- it better demonstrates the value of storing data as a graph
+
+### 3. Graph Quality Metrics
+
+Add simple metrics so improvements can be measured rather than only observed visually.
+
+Suggested metrics:
+
+- number of isolated nodes
+- number of connected components
+- size of the largest connected component
+- average node degree
+- number of merged aliases / label conflicts resolved
+
+Why this matters:
+
+- it provides evidence that normalization and coreference are improving the graph
+- it strengthens the project’s explainability and evaluation story
+
+### 4. Test Stabilization And Coverage
+
+Continue strengthening tests around:
+
+- processing pipeline completion
+- coreference-aware relation extraction
+- entity resolution and label reconciliation
+- saved QA session behavior
+- QA query generation / repair
+- highlight and provenance payload generation
+
+Why this matters:
+
+- it makes the project feel more production-ready
+- it protects the system while iterating on extraction and QA logic
+
+### 5. Dockerized Developer Experience
+
+Add Docker support so the system can be started with a small number of commands and with less local setup friction.
+
+Preferred outcome:
+
+- one documented setup flow
+- ideally `docker compose up --build`
+- all key local services orchestrated together
+
+Likely services:
+
+- Django app
+- Celery worker
+- Redis
+- Memgraph
+
+Optional:
+
+- Ollama if local-model execution is intended to run inside the containerized workflow
+
+Why this matters:
+
+- it reduces environment setup friction
+- it makes the project much easier to demo, share, and review
+- it is a strong production-minded finishing touch
+
+## Nice-To-Have Before Stopping
+
+These are useful, but not required for a strong stopping point.
+
+- confidence scoring for entity resolution
+- merge reasons for canonicalization
+- improved provenance snippet ranking
+- better session management UX
+- multi-document graph coexistence improvements
+- richer graph analytics
+- content-type-aware extraction profiles
+
+## Reasonable Stop-Here Criteria
+
+The project is in a good place to stop when it can confidently demonstrate:
+
+1. upload a document
+2. validate LLM availability
+3. process it asynchronously with visible progress
+4. build a reasonably connected graph
+5. inspect graph evidence and provenance
+6. open or resume a saved QA conversation
+7. answer both simple and somewhat more graph-native questions
+8. explain how graph quality improved through coreference and entity resolution
+9. run locally with a clear setup flow, ideally Dockerized
+
+At that point, the project already tells a compelling complete story:
+
+- ingestion
+- preprocessing
+- graph construction
+- storage
+- retrieval and QA
+- explainability
+- UX
+- operational thinking
+
+## Suggested Execution Order
+
+The most practical order from here is:
+
+1. advanced chunking
+2. more complex QA intents
+3. graph quality metrics
+4. Dockerization
+5. final test cleanup and polish
+
+This order keeps improvements focused on core capability first, then developer experience and packaging.
+
+---
+
 # Long-Term Goals
 
 The long-term goal is to build a lightweight but capable platform for:
