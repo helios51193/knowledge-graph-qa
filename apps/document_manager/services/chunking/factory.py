@@ -3,10 +3,10 @@ from django.conf import settings
 from .word_chunker import WordChunker
 from .sentence_chunker import SentenceChunker
 from .paragraph_chunker import ParagraphChunker
+from .recursive_chunker import RecursiveChunker
 
 
 def get_chunker():
-    print("Inside")
 
     chunker_type = getattr(settings, "DOCUMENT_CHUNKER", "word")
 
@@ -18,5 +18,8 @@ def get_chunker():
 
     if chunker_type == "paragraph":
         return ParagraphChunker()
+
+    if chunker_type == "recursive":
+        return RecursiveChunker()
 
     raise ValueError("Invalid chunker type")

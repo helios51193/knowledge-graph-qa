@@ -145,6 +145,7 @@ def ask_question(request, doc_id, session_id):
             query_rows=result["rows"],
             provenance=result.get("provenance", []),
             highlight=result.get("highlight", {}),
+            question_analysis=result.get("question_analysis", {}),
         )
         if not session.title:
             session.title = question[:80]
@@ -158,6 +159,7 @@ def ask_question(request, doc_id, session_id):
                 "cypher": result["cypher"],
                 "rows": result["rows"],
                 "provenance": result.get("provenance", []),
+                "question_analysis": result.get("question_analysis", {}),
                 "has_error": False,
             }
         
@@ -186,6 +188,7 @@ def ask_question(request, doc_id, session_id):
             "rows": [],
             "provenance": [],
             "has_error": True,
+            "question_analysis": {},
         }
         
         response = render(
@@ -254,3 +257,15 @@ def create_qa_session(request, doc_id):
     )
 
     return redirect("document_manager:qa_page", doc_id=document.id, session_id=session.id)
+
+@login_required
+def graph_panel(request, doc_id):
+    document = get_object_or_404(Document, id=doc_id, user=request.user)
+
+    return render(
+        request,
+        "document_manager/components/graph_panel.jinja",
+        {
+            "document": document,
+        },
+    )

@@ -7,6 +7,7 @@ urlpatterns = [
                 # partials
                 path("component/document-table", views.document_table, name="document_table"),
                 path("component/upload-document", views.upload_document, name="upload_document"),
+                path("component/graph-panel/<int:doc_id>", views.graph_panel, name="graph_panel"),
                 # api
                 path("api/delete-document/<int:doc_id>", views.delete_document, name="delete_document"),
                 path("api/process-document/<int:doc_id>", views.process_document_view, name="process_document"),

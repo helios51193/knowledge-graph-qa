@@ -216,6 +216,10 @@ class LlmRelationExtractor(BaseRelationExtractor):
 
         if source_entity is None or target_entity is None:
             return None
+        
+        if source_entity["name"].strip().lower() == target_entity["name"].strip().lower():
+            return None
+        
 
         relation_type = relation_type.upper().replace(" ", "_")
 

@@ -10,10 +10,12 @@ from .entity_extraction.entity_extractor import extract_entities
 from .relation_extraction.relation_extractor import extract_relations
 from .graph_building.graph_builder import build_graph
 from .logger import log_stage, update_progress
+from .graph_building.graph_metrics import build_graph_metrics
 from .normalization.entity_resolver import (
     apply_entity_resolution_to_relations,
     resolve_entities,
 )
+from .chunking.chunk_metrics import build_chunk_metrics
 from ..models import Document
 
 def process_document_pipeline(document:Document):
@@ -25,6 +27,7 @@ def process_document_pipeline(document:Document):
    update_progress(document, 20)
    
    original_chunks = chunk_text(document, normalized_text)
+   chunk_metrics = build_chunk_metrics(original_chunks)
    update_progress(document, 30)
    
    coreference_result = resolve_coreferences(document, normalized_text)
@@ -53,6 +56,21 @@ def process_document_pipeline(document:Document):
    graph = build_graph(resolved_entities, resolved_relations)
    update_progress(document, 90)
 
+   graph_metrics = build_graph_metrics(graph)
+   log_stage(
+    document,
+    "GRAPH_BUILDING",
+        (
+            f"Graph metrics | "
+            f"nodes={graph_metrics['node_count']} | "
+            f"edges={graph_metrics['edge_count']} | "
+            f"isolated_nodes={graph_metrics['isolated_nodes']} | "
+            f"connected_components={graph_metrics['connected_components']} | "
+            f"largest_component_size={graph_metrics['largest_component_size']} | "
+            f"average_degree={graph_metrics['average_degree']} | "
+            f"density={graph_metrics['density']}"
+        ),
+    )
    res = {
        "chunks":original_chunks,
        "entities":resolved_entities,
@@ -60,6 +78,8 @@ def process_document_pipeline(document:Document):
        "graph":graph,
        "coreference":coreference_result,
        "label_summary": label_summary,
+       "chunk_metrics": chunk_metrics,
+       "graph_metrics": graph_metrics,
     }
 
    return res

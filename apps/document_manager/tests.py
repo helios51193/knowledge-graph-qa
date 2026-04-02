@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
-
+from apps.document_manager.services.chunking.chunk import Chunk
+from apps.document_manager.services.chunking.chunk_metrics import build_chunk_metrics
 from apps.auth_manager.models import User
 from apps.document_manager.models import Document, ProcessingLog
 from apps.document_manager.tasks import process_document
@@ -285,3 +286,17 @@ def test_heuristic_relation_extractor_uses_analysis_text_when_present(self):
 
     relation_types = {relation["type"] for relation in relations}
     self.assertIn("LIVES_IN", relation_types)
+
+def test_build_chunk_metrics_returns_expected_summary(self):
+    chunks = [
+        Chunk(chunk_id=0, document_id=1, text="one two three", start_index=0, end_index=13),
+        Chunk(chunk_id=1, document_id=1, text="one two", start_index=14, end_index=21),
+    ]
+
+    metrics = build_chunk_metrics(chunks)
+
+    self.assertEqual(metrics["chunk_count"], 2)
+    self.assertEqual(metrics["total_words"], 5)
+    self.assertEqual(metrics["avg_words"], 2.5)
+    self.assertEqual(metrics["min_words"], 2)
+    self.assertEqual(metrics["max_words"], 3)

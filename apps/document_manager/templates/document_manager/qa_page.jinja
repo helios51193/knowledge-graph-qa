@@ -57,7 +57,8 @@ QA - {{ document.name }}
                                     {{ {
                                         "cypher": message.cypher,
                                         "rows": message.query_rows,
-                                        "provenance": message.provenance
+                                        "provenance": message.provenance,
+                                        "question_analysis": message.question_analysis
                                     } | tojson }}
                                 </script>
                             </div>
@@ -97,352 +98,183 @@ QA - {{ document.name }}
             </div>
         </div>
     </section>
+    {% include "document_manager/components/graph_panel.jinja" %}
 
-    <section class="card border border-base-300 bg-base-100 shadow-sm h-[78vh] min-h-[78vh]">
-        <div class="card-body flex h-full min-h-0 flex-col">
-            <div class="mb-4 flex items-center justify-between">
-                <div>
-                    <h2 class="text-lg font-semibold">Graph View</h2>
-                    <p class="text-sm opacity-70">
-                        Visual graph for this document
-                    </p>
-                </div>
-
-                <div class="flex items-center gap-2 text-sm opacity-70">
-                    <span>Nodes: {{ document.nodes }} | Edges: {{ document.edges }}</span>
-                    <button id="rehighlight-graph-btn" type="button" class="btn btn-sm btn-outline">
-                        Rehighlight
-                    </button>
-                    <button id="reset-graph-btn" type="button" class="btn btn-sm btn-outline">
-                        Reset View
-                    </button>
-            </div>
-            </div>
-
-            {% if document.graph_data and document.graph_data.nodes %}
-            <div class="flex-1 min-h-0">
-                <div id="graph-view" class="h-full w-full rounded-xl border border-base-300 bg-slate-900"></div>
-            </div>
-            <div class="mt-4 flex flex-wrap gap-2 text-xs">
-                <span class="badge bg-transparent text-[#60a5fa] border-[#60a5fa]">Person</span>
-                <span class="badge bg-transparent text-[#34d399] border-[#34d399]">Location</span>
-                <span class="badge bg-transparent text-[#fbbf24] border-[#fbbf24]">Organization</span>
-                <span class="badge bg-transparent text-[#9ca3af] border-[#9ca3af]">Concept</span>
-            </div>
-            <div class="mt-4 rounded-xl border border-base-300 bg-base-200/20 p-4 text-sm opacity-80">
-                Click a node or edge to inspect graph evidence.
-            </div>
-
-            {% else %}
-            <div
-                class="mt-4 flex h-full min-h-[500px] items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-200/40">
-                <div class="text-center">
-                    <p class="font-medium">No graph data available</p>
-                    <p class="mt-2 text-sm opacity-70">
-                        Process the document first to generate the graph.
-                    </p>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </section>
 </div>
-{% if document.graph_data and document.graph_data.nodes %}
+<dialog id="graph-evidence-modal" class="modal">
+    <div class="modal-box max-w-4xl">
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <h3 id="graph-evidence-title" class="text-xl font-semibold">Graph Evidence</h3>
+                <p id="graph-evidence-meta" class="mt-1 text-sm opacity-70"></p>
+            </div>
 
-<script>
-    const graphData = {{ (document.graph_data or { "nodes": [], "edges": [] }) | tojson }};
-    let lastGraphHighlightPayload = null;
-    function nodeColor(label) {
-        switch (label) {
-            case "Person":
-                return "#3b82f6";
-            case "Location":
-                return "#10b981";
-            case "Organization":
-                return "#f59e0b";
-            case "Concept":
-                return "#6b7280";
-            default:
-                return "#8b5cf6";
-        }
-    }
+            <form method="dialog">
+                <button class="btn btn-sm btn-outline">Close</button>
+            </form>
+        </div>
 
-    const elements = [];
+        <div
+            id="graph-evidence-body"
+            class="mt-6 max-h-[65vh] overflow-y-auto rounded-xl border border-base-300 bg-base-200/30 p-4 whitespace-pre-wrap text-sm"
+        ></div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+<dialog id="answer-explain-modal" class="modal">
+    <div class="modal-box max-w-6xl">
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <h3 class="text-xl font-semibold">Answer Explainability</h3>
+                <p class="mt-1 text-sm opacity-70">
+                    Query details and supporting source evidence
+                </p>
+            </div>
 
-    for (const node of graphData.nodes || []) {
-        elements.push({
-            data: {
-                id: node.id,
-                label: node.label,
-                name: node.name,
-                document_id: node.document_id,
-                provenance: node.provenance || {},
-            }
-        });
-    }
+            <form method="dialog">
+                <button class="btn btn-sm btn-outline">Close</button>
+            </form>
+        </div>
 
-    for (const edge of graphData.edges || []) {
-        elements.push({
-            data: {
-                id: `${edge.source}-${edge.type}-${edge.target}`,
-                source: edge.source,
-                target: edge.target,
-                label: edge.type,
-                type: edge.type,
-                source_name: edge.source_name,
-                target_name: edge.target_name,
-                provenance: edge.provenance || {},
-            }
-        });
-    }
-
-    const cy = cytoscape({
-        container: document.getElementById("graph-view"),
-        elements: elements,
-        layout: {
-            name: "cose",
-            animate: true,
-            fit: true,
-            padding: 30,
-        },
-        style: [
-            {
-                selector: "node",
-                style: {
-                    "background-color": function (ele) {
-                        return nodeColor(ele.data("label"));
-                    },
-                    "label": "data(name)",
-                    "color": "#f3f4f6",
-                    "text-valign": "bottom",
-                    "text-halign": "center",
-                    "font-size": "10px",
-                    "text-margin-y": 8,
-                    "width": 28,
-                    "height": 28,
-                    "border-width": 2,
-                    "border-color": "#ffffff",
-                    "opacity": 1,
-                }
-            },
-            {
-                selector: "edge",
-                style: {
-                    "curve-style": "bezier",
-                    "width": 2,
-                    "line-color": "#94a3b8",
-                    "target-arrow-color": "#94a3b8",
-                    "target-arrow-shape": "triangle",
-                    "arrow-scale": 0.9,
-                    "label": "data(label)",
-                    "font-size": "8px",
-                    "color": "#e5e7eb",
-                    "text-background-color": "#111827",
-                    "text-background-opacity": 0.85,
-                    "text-background-padding": "2px",
-                    "opacity": 1,
-                }
-            },
-            {
-                selector: ".faded",
-                style: {
-                    "opacity": 0.15,
-                    "text-opacity": 0.2,
-                }
-            },
-            {
-                selector: "edge.faded",
-                style: {
-                    "opacity": 0.08,
-                    "text-opacity": 0.1,
-                }
-            },
-            {
-                selector: ".highlighted-node",
-                style: {
-                    "border-width": 4,
-                    "border-color": "#f8fafc",
-                    "width": 38,
-                    "height": 38,
-                    "z-index": 999,
-                    "overlay-opacity": 0,
-                }
-            },
-            {
-                selector: ".highlighted-edge",
-                style: {
-                    "width": 4,
-                    "line-color": "#facc15",
-                    "target-arrow-color": "#facc15",
-                    "opacity": 1,
-                    "z-index": 998,
-                }
-            }
-
-        ]
-    });
-
-    cy.on("tap", "node", function(evt) {
-        const node = evt.target;
-        openGraphEvidenceModalForNode(node.data());
-    });
-
-    cy.on("tap", "edge", function(evt) {
-        const edge = evt.target;
-        openGraphEvidenceModalForEdge(edge.data());
-    });
-
-    const graphResetButton = document.getElementById("reset-graph-btn");
-    if (graphResetButton) {
-        graphResetButton.addEventListener("click", function () {
-            clearGraphHighlight();
-            cy.fit(cy.elements(), 30);
-        });
-    }
-    document.body.addEventListener("qaGraphHighlight", function (event) {
-        lastGraphHighlightPayload = event.detail || {};
-        applyGraphHighlight(lastGraphHighlightPayload);
-    });
-    const rehighlightGraphButton = document.getElementById("rehighlight-graph-btn");
-    if (rehighlightGraphButton) {
-        rehighlightGraphButton.addEventListener("click", function () {
-            if (lastGraphHighlightPayload) {
-                applyGraphHighlight(lastGraphHighlightPayload);
-            }
-        });
-    }
-    function clearGraphHighlight() {
-        cy.elements().removeClass("faded highlighted-node highlighted-edge");
-    }
-    function applyGraphHighlight(payload) {
-        clearGraphHighlight();
-
-        const nodeIds = payload.node_ids || [];
-        const edgeIds = payload.edge_ids || [];
-        const focus = payload.focus !== false;
-
-        if (!nodeIds.length && !edgeIds.length) {
-            return;
-        }
-
-        cy.elements().addClass("faded");
-
-        const nodesToHighlight = cy.collection(
-            nodeIds
-                .map(id => cy.getElementById(id))
-                .filter(ele => ele && ele.length > 0)
-        );
-
-        const edgesToHighlight = cy.collection(
-            edgeIds
-                .map(id => cy.getElementById(id))
-                .filter(ele => ele && ele.length > 0)
-        );
-
-        nodesToHighlight.removeClass("faded").addClass("highlighted-node");
-        edgesToHighlight.removeClass("faded").addClass("highlighted-edge");
-
-        const connectedNodes = edgesToHighlight.connectedNodes();
-        connectedNodes.removeClass("faded");
-
-        const focusElements = nodesToHighlight.union(edgesToHighlight).union(connectedNodes);
-
-        if (focus && focusElements.length > 0) {
-            cy.fit(focusElements, 80);
-        }
-    }
-    function escapeHtml(value) {
-        return String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
-    function openGraphEvidenceModal(title, meta, sourceText) {
-        const modal = document.getElementById("graph-evidence-modal");
-        const titleEl = document.getElementById("graph-evidence-title");
-        const metaEl = document.getElementById("graph-evidence-meta");
-        const bodyEl = document.getElementById("graph-evidence-body");
-
-        if (!modal || !titleEl || !metaEl || !bodyEl) {
-            return;
-        }
-
-        titleEl.textContent = title || "Graph Evidence";
-        metaEl.textContent = meta || "";
-        bodyEl.textContent = sourceText || "No source text available.";
-
-        modal.showModal();
-        }
-
-    function openGraphEvidenceModalForNode(nodeData) {
-        const provenance = nodeData.provenance || {};
-        const sourceText = provenance.source_text || "No source text available.";
-
-        const meta = `Chunk ${provenance.chunk_id ?? "-"} | ${provenance.start_index ?? "-"} - ${provenance.end_index ?? "-"}`;
-        const title = `${nodeData.name} (${nodeData.label})`;
-
-        openGraphEvidenceModal(title, meta, sourceText);
-    }
-
-    function openGraphEvidenceModalForEdge(edgeData) {
-        const provenance = edgeData.provenance || {};
-        const sourceText = provenance.source_text || "No source text available.";
-
-        const meta = `Chunk ${provenance.chunk_id ?? "-"} | ${provenance.start_index ?? "-"} - ${provenance.end_index ?? "-"}`;
-        const title = `${edgeData.source_name} -[${edgeData.type}]-> ${edgeData.target_name}`;
-
-        openGraphEvidenceModal(title, meta, sourceText);
-    }
-    function openAnswerExplainModal(buttonEl) {
-        const scriptEl = buttonEl.parentElement.querySelector(".qa-explain-data");
-        if (!scriptEl) {
-            return;
-        }
-
-        let data = {};
-        try {
-            data = JSON.parse(scriptEl.textContent || "{}");
-        } catch (error) {
-            console.error("Failed to parse explainability payload", error);
-            return;
-        }
-
-        const modal = document.getElementById("answer-explain-modal");
-        const cypherEl = document.getElementById("answer-explain-cypher");
-        const rowsEl = document.getElementById("answer-explain-rows");
-        const provenanceEl = document.getElementById("answer-explain-provenance");
-
-        if (!modal || !cypherEl || !rowsEl || !provenanceEl) {
-            return;
-        }
-
-        cypherEl.textContent = data.cypher || "No Cypher available.";
-        rowsEl.textContent = JSON.stringify(data.rows || [], null, 2);
-
-        const provenance = data.provenance || [];
-        if (!provenance.length) {
-            provenanceEl.innerHTML = '<div class="text-sm opacity-70">No source evidence available.</div>';
-        } else {
-            provenanceEl.innerHTML = provenance.map(item => `
-                <div class="rounded-xl bg-base-300/40 p-3 text-xs">
-                    <div class="font-semibold">${escapeHtml(item.title || "Evidence")}</div>
-                    <div class="mt-1 opacity-70">
-                        Chunk ${escapeHtml(item.chunk_id ?? "-")}
-                        ${item.start_index != null && item.end_index != null
-                            ? `| ${escapeHtml(item.start_index)} - ${escapeHtml(item.end_index)}`
-                            : ""}
-                    </div>
-                    <div class="mt-2 whitespace-pre-wrap text-sm">
-                        ${escapeHtml(item.snippet || item.source_text || "")}
-                    </div>
+        <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div class="space-y-4">
+                <div>
+                    <h4 class="font-semibold">Question Analysis</h4>
+                    <pre id="answer-explain-question-analysis" class="mt-2 max-h-[18vh] overflow-auto rounded-xl bg-base-200/50 p-4 text-xs"></pre>
                 </div>
-            `).join("");
-        }
+                <div>
+                    <h4 class="font-semibold">Cypher Query</h4>
+                    <pre id="answer-explain-cypher" class="mt-2 max-h-[28vh] overflow-auto rounded-xl bg-base-200/50 p-4 text-xs"></pre>
+                </div>
 
-        modal.showModal();
+                <div>
+                    <h4 class="font-semibold">Query Result</h4>
+                    <pre id="answer-explain-rows" class="mt-2 max-h-[28vh] overflow-auto rounded-xl bg-base-200/50 p-4 text-xs"></pre>
+                </div>
+            </div>
+
+            <div>
+                <h4 class="font-semibold">Source Evidence</h4>
+                <div id="answer-explain-provenance" class="mt-2 max-h-[58vh] overflow-y-auto space-y-3 rounded-xl border border-base-300 bg-base-200/30 p-4"></div>
+            </div>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+<script>
+window.lastGraphHighlightPayload = window.lastGraphHighlightPayload || null;
+
+function escapeHtml(value) {
+    return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+window.openGraphEvidenceModal = function (title, meta, sourceText) {
+    const modal = document.getElementById("graph-evidence-modal");
+    const titleEl = document.getElementById("graph-evidence-title");
+    const metaEl = document.getElementById("graph-evidence-meta");
+    const bodyEl = document.getElementById("graph-evidence-body");
+
+    if (!modal || !titleEl || !metaEl || !bodyEl) {
+        return;
     }
+
+    titleEl.textContent = title || "Graph Evidence";
+    metaEl.textContent = meta || "";
+    bodyEl.textContent = sourceText || "No source text available.";
+
+    modal.showModal();
+};
+
+window.openGraphEvidenceModalForNode = function (nodeData) {
+    const provenance = nodeData.provenance || {};
+    const sourceText = provenance.source_text || "No source text available.";
+
+    const meta = `Chunk ${provenance.chunk_id ?? "-"} | ${provenance.start_index ?? "-"} - ${provenance.end_index ?? "-"}`;
+    const title = `${nodeData.name} (${nodeData.label})`;
+
+    window.openGraphEvidenceModal(title, meta, sourceText);
+};
+
+window.openGraphEvidenceModalForEdge = function (edgeData) {
+    const provenance = edgeData.provenance || {};
+    const sourceText = provenance.source_text || "No source text available.";
+
+    const meta = `Chunk ${provenance.chunk_id ?? "-"} | ${provenance.start_index ?? "-"} - ${provenance.end_index ?? "-"}`;
+    const title = `${edgeData.source_name} -[${edgeData.type}]-> ${edgeData.target_name}`;
+
+    window.openGraphEvidenceModal(title, meta, sourceText);
+};
+
+window.openAnswerExplainModal = function (buttonEl) {
+    const scriptEl = buttonEl.parentElement.querySelector(".qa-explain-data");
+
+    if (!scriptEl) {
+        return;
+    }
+
+    let data = {};
+    try {
+        data = JSON.parse(scriptEl.textContent || "{}");
+    } catch (error) {
+        console.error("Failed to parse explainability payload", error);
+        return;
+    }
+
+    const modal = document.getElementById("answer-explain-modal");
+    const cypherEl = document.getElementById("answer-explain-cypher");
+    const rowsEl = document.getElementById("answer-explain-rows");
+    const provenanceEl = document.getElementById("answer-explain-provenance");
+    const questionAnalysisEl = document.getElementById("answer-explain-question-analysis");
+
+    if (!modal || !questionAnalysisEl || !cypherEl || !rowsEl || !provenanceEl) {
+        return;
+    }
+
+    questionAnalysisEl.textContent = JSON.stringify(data.question_analysis || {}, null, 2);
+    cypherEl.textContent = data.cypher || "No Cypher available.";
+    rowsEl.textContent = JSON.stringify(data.rows || [], null, 2);
+
+    const provenance = data.provenance || [];
+    if (!provenance.length) {
+        provenanceEl.innerHTML = '<div class="text-sm opacity-70">No source evidence available.</div>';
+    } else {
+        provenanceEl.innerHTML = provenance.map(item => `
+            <div class="rounded-xl bg-base-300/40 p-3 text-xs">
+                <div class="font-semibold">${escapeHtml(item.title || "Evidence")}</div>
+                <div class="mt-1 opacity-70">
+                    Chunk ${escapeHtml(item.chunk_id ?? "-")}
+                    ${item.start_index != null && item.end_index != null
+                        ? `| ${escapeHtml(item.start_index)} - ${escapeHtml(item.end_index)}`
+                        : ""}
+                </div>
+                <div class="mt-2 whitespace-pre-wrap text-sm">
+                    ${escapeHtml(item.snippet || item.source_text || "")}
+                </div>
+            </div>
+        `).join("");
+    }
+
+    modal.showModal();
+};
+
+document.body.addEventListener("qaGraphHighlight", function (event) {
+    window.lastGraphHighlightPayload = event.detail || {};
+
+    if (window.documentGraphCy && typeof window.applyDocumentGraphHighlight === "function") {
+        window.applyDocumentGraphHighlight(window.lastGraphHighlightPayload);
+    }
+});
+
+(function () {
     const qaThread = document.getElementById("qa-thread");
     const qaAskForm = document.getElementById("qa-ask-form");
     const qaAskButton = document.getElementById("qa-ask-button");
@@ -504,66 +336,7 @@ QA - {{ document.name }}
     window.addEventListener("load", function () {
         scrollQaThreadToBottom();
     });
+})();
 </script>
-{% endif %}
-<dialog id="graph-evidence-modal" class="modal">
-    <div class="modal-box max-w-4xl">
-        <div class="flex items-start justify-between gap-4">
-            <div>
-                <h3 id="graph-evidence-title" class="text-xl font-semibold">Graph Evidence</h3>
-                <p id="graph-evidence-meta" class="mt-1 text-sm opacity-70"></p>
-            </div>
 
-            <form method="dialog">
-                <button class="btn btn-sm btn-outline">Close</button>
-            </form>
-        </div>
-
-        <div
-            id="graph-evidence-body"
-            class="mt-6 max-h-[65vh] overflow-y-auto rounded-xl border border-base-300 bg-base-200/30 p-4 whitespace-pre-wrap text-sm"
-        ></div>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-        <button>close</button>
-    </form>
-</dialog>
-<dialog id="answer-explain-modal" class="modal">
-    <div class="modal-box max-w-6xl">
-        <div class="flex items-start justify-between gap-4">
-            <div>
-                <h3 class="text-xl font-semibold">Answer Explainability</h3>
-                <p class="mt-1 text-sm opacity-70">
-                    Query details and supporting source evidence
-                </p>
-            </div>
-
-            <form method="dialog">
-                <button class="btn btn-sm btn-outline">Close</button>
-            </form>
-        </div>
-
-        <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div class="space-y-4">
-                <div>
-                    <h4 class="font-semibold">Cypher Query</h4>
-                    <pre id="answer-explain-cypher" class="mt-2 max-h-[28vh] overflow-auto rounded-xl bg-base-200/50 p-4 text-xs"></pre>
-                </div>
-
-                <div>
-                    <h4 class="font-semibold">Query Result</h4>
-                    <pre id="answer-explain-rows" class="mt-2 max-h-[28vh] overflow-auto rounded-xl bg-base-200/50 p-4 text-xs"></pre>
-                </div>
-            </div>
-
-            <div>
-                <h4 class="font-semibold">Source Evidence</h4>
-                <div id="answer-explain-provenance" class="mt-2 max-h-[58vh] overflow-y-auto space-y-3 rounded-xl border border-base-300 bg-base-200/30 p-4"></div>
-            </div>
-        </div>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-        <button>close</button>
-    </form>
-</dialog>
 {% endblock %}

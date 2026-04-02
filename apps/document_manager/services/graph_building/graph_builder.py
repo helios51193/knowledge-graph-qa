@@ -55,6 +55,9 @@ def build_graph(entities, relations):
         if source_node is None or target_node is None:
             continue
 
+        if source_node["id"] == target_node["id"]:
+            continue
+
         edge = {
             "id": f'{source_node["id"]}-{relation["type"].strip().upper()}-{target_node["id"]}',
             "source": source_node["id"],

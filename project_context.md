@@ -220,6 +220,7 @@ Important fields include:
 - `query_rows`
 - `provenance`
 - `highlight`
+- `question_analysis`
 - `created_at`
 
 This allows the system to:
@@ -227,6 +228,7 @@ This allows the system to:
 - resume past conversations
 - audit generated Cypher and result rows
 - keep graph highlighting metadata tied to each assistant turn
+- keep question-intent / query-strategy metadata for explainability
 
 ---
 
@@ -317,6 +319,7 @@ The right side currently supports:
 
 - rendering the graph with Cytoscape.js
 - resetting the graph viewport
+- reloading the current document graph without rerunning the full QA page
 - highlighting relevant nodes and edges based on QA output
 - selecting graph elements directly
 - viewing provenance for clicked nodes and edges
@@ -373,6 +376,7 @@ User opens the QA session picker for a document
 -> Result rows are converted into a natural-language answer  
 -> Highlight payload is built from the result rows  
 -> Provenance payload is built from the highlighted graph elements  
+-> Question-analysis metadata is generated for supported QA intents  
 -> The answer is appended to the chat thread  
 -> The graph highlights the relevant subgraph  
 -> Source evidence is shown in the QA response and is also inspectable from graph clicks
@@ -416,7 +420,7 @@ flowchart LR
     J --> L["Insert Graph into Memgraph"]
     K --> M["QA Sessions + QA Engine"]
     L --> M
-    M --> N["Cypher + Answer + Highlight + Provenance"]
+    M --> N["Cypher + Answer + Highlight + Provenance + Question Analysis"]
 ```
 
 ---
@@ -770,6 +774,7 @@ Current graph conventions in Memgraph:
 
 - all nodes use label `:Entity`
 - semantic type is stored in node property `label`
+- a stable application graph identifier is stored in node property `graph_id`
 - relationships use typed edges such as `WORKS_AT`, `LIVES_IN`, `ALLY_OF`, etc.
 - both nodes and edges are scoped using `document_id`
 
@@ -789,6 +794,7 @@ Current responsibilities:
 - create nodes
 - create edges
 - execute read queries for QA
+- persist a stable `graph_id` for node-to-UI alignment
 
 This service is the bridge between the ingestion pipeline and the QA layer.
 
@@ -822,6 +828,44 @@ The QA layer currently follows these rules:
 - answer generation is phrased naturally but remains grounded in the graph result
 - explanations should remain traceable back to graph evidence
 
+## QA Intent Layer
+
+The QA system now includes an initial intent-routing layer before generic LLM Cypher generation.
+
+Currently supported intent families include:
+
+- `lookup_basic`
+- `lookup_summary`
+- `relationship_path`
+- `ranking_centrality`
+- `ranking_influence`
+
+The QA engine now follows a hybrid strategy:
+
+- detect a supported question intent when confidence is high
+- build deterministic Cypher for that intent
+- fall back to generic LLM Cypher generation when no supported intent is matched
+
+This improves:
+
+- consistency for common graph-native question types
+- explainability of query strategy
+- control over path and ranking questions
+
+Current examples of supported user-facing questions:
+
+- `Who/what is X?`
+- `What can you tell me about X?`
+- `How is X related to Y?`
+- `Who is central in the document?`
+- `Who is most influential?`
+
+For `ranking_influence`, the current operational definition is:
+
+- incoming edge count plus outgoing edge count
+
+This is intentionally a graph-based proxy rather than a claim of semantic or narrative influence.
+
 ## Cypher Repair
 
 If generated Cypher fails to execute, the system performs a repair step.
@@ -837,6 +881,25 @@ Original question
 
 This improves robustness against common LLM query mistakes.
 
+## Question Analysis
+
+Assistant QA turns now store question-analysis metadata alongside:
+
+- Cypher
+- query rows
+- provenance
+- highlight payload
+
+Question-analysis metadata captures things like:
+
+- detected intent
+- matched entities
+- query strategy used
+- whether generic fallback was used
+- intent-specific filters such as path hop limits
+
+This metadata is surfaced in the explainability modal and strengthens debugging and QA transparency.
+
 ---
 
 # Graph Viewer
@@ -848,6 +911,7 @@ Current capabilities:
 - render nodes and edges from `document.graph_data`
 - color nodes by entity type
 - display relation labels on edges
+- reload the graph panel independently from the conversation panel
 - reset the graph view with a dedicated button
 - show a legend for the current entity color mapping
 - highlight relevant nodes and edges after a QA response
@@ -855,6 +919,19 @@ Current capabilities:
 - zoom to the relevant subgraph when highlighting is applied
 - allow clicking nodes and edges to inspect provenance
 - preserve graph interaction while reloading saved conversations
+
+The graph UI is now split into:
+
+- a reusable graph panel partial
+- a reload-safe graph script partial
+
+This allows the current document graph to be refreshed independently through HTMX.
+
+Path-question highlighting is also being aligned more tightly with query results by:
+
+- returning path node ids / path edges from Cypher
+- using stable `graph_id` values from Memgraph nodes
+- reapplying the last highlight payload after graph reloads
 
 The graph panel is now an interactive companion to the QA thread rather than a passive visualization.
 
@@ -872,6 +949,7 @@ Current provenance behavior:
 - QA answers surface source evidence derived from the highlighted graph elements
 - clicking graph elements allows inspection of their provenance in the UI
 - assistant QA turns store provenance and highlight payloads for later retrieval
+- assistant QA turns also store question-analysis metadata for explainability
 
 This gives the project a stronger explainability story and supports more production-ready auditing behavior.
 
@@ -938,9 +1016,12 @@ Implemented strengths include:
 - more natural answer tone while remaining grounded
 - dedicated document QA page
 - saved QA conversation threads per document
+- intent-aware QA routing for a first set of graph-native question types
 - integrated graph visualization using Cytoscape.js
 - graph highlighting tied to QA output
+- reloadable graph panel within the QA page
 - provenance-aware answer evidence
+- question-analysis explainability in QA responses
 - scoring-based entity resolution and label reconciliation
 - upload-time LLM availability validation
 - progress-aware document processing UI
@@ -955,10 +1036,12 @@ Important current limitations include:
 - heuristic extraction remains brittle across very different domains
 - LLM extraction may still produce incomplete or imperfect graph structure
 - normalization, coreference, and canonicalization are still evolving
+- person-name alias resolution is still heuristic and may require broader tuning on general corpora
 - second-person and dialogue-heavy pronouns remain difficult for coreference resolution
 - relation density still depends heavily on chunking quality and local context windows
 - QA may return shallow answers if the graph itself is sparse
 - query repair currently handles execution errors, but not yet weak or empty-result recovery
+- path-highlighting accuracy depends on `graph_id` being present in persisted Memgraph nodes
 - graph clearing behavior should be used carefully in multi-document scenarios
 - tests are still being expanded and stabilized
 
@@ -971,6 +1054,7 @@ Likely next improvements are:
 - strengthen scoring-based entity normalization
 - improve coreference robustness and chunk alignment behavior
 - expand adjacent-chunk and multi-hop relation coverage
+- improve intent coverage beyond the initial lookup / path / ranking set
 - improve provenance snippet quality and UI presentation
 - add empty-but-suspicious QA result recovery
 - improve QA thread UX and session management

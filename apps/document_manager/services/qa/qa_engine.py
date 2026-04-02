@@ -4,6 +4,8 @@ import re
 import requests
 from django.conf import settings
 from openai import OpenAI
+from .question_intents import analyze_question
+from .intent_queries import build_intent_cypher
 
 from ..graph_database import execute_read_query
 
@@ -14,9 +16,17 @@ READ_ONLY_PREFIXES = ("MATCH", "OPTIONAL MATCH", "WITH", "RETURN", "CALL")
 class QAEngine:
 
     def answer_question(self, document, question):
+        
         schema = self._build_graph_schema(document)
+        question_analysis = analyze_question(question, document.graph_data or {})
 
-        cypher = self._generate_cypher(document, question, schema)
+        cypher = build_intent_cypher(document, question_analysis)
+
+        if not cypher:
+            question_analysis["fallback_used"] = True
+            question_analysis["strategy"] = "llm_cypher_generation"
+            cypher = self._generate_cypher(document, question, schema)
+
         self._validate_read_only_query(cypher)
 
         try:
@@ -38,6 +48,7 @@ class QAEngine:
             cypher=cypher,
             rows=rows,
             schema=schema,
+            question_analysis=question_analysis,
         )
 
         highlight = self._build_highlight_payload(document, rows)
@@ -49,11 +60,11 @@ class QAEngine:
             "rows": rows,
             "answer": answer,
             "highlight":highlight,
-            "provenance":provenance
+            "provenance":provenance,
+            "question_analysis": question_analysis,
         }
     
     def _build_highlight_payload(self, document, rows):
-        
         graph_data = document.graph_data or {}
         nodes = graph_data.get("nodes", [])
         edges = graph_data.get("edges", [])
@@ -64,29 +75,46 @@ class QAEngine:
             if node.get("name") and node.get("id")
         }
 
+        edge_ids = set()
+        node_ids = set()
         highlighted_names = set()
         highlighted_relation_types = set()
 
         for row in rows:
+            # Path-specific direct highlighting
+            for node_id in row.get("path_node_ids", []):
+                if node_id:
+                    node_ids.add(node_id)
+
+            for edge in row.get("path_edges", []):
+                source = edge.get("source")
+                target = edge.get("target")
+                rel_type = edge.get("type")
+
+                if source and target and rel_type:
+                    edge_ids.add(f"{source}-{rel_type}-{target}")
+
+            # Generic fallback highlighting
             self._collect_highlight_values(
                 value=row,
                 highlighted_names=highlighted_names,
                 highlighted_relation_types=highlighted_relation_types,
             )
 
-        node_ids = set()
         for name in highlighted_names:
             node_id = node_id_by_name.get(name.lower())
             if node_id:
                 node_ids.add(node_id)
 
-        edge_ids = set()
         for edge in edges:
             edge_id = f'{edge["source"]}-{edge["type"]}-{edge["target"]}'
 
             source_selected = edge["source"] in node_ids
             target_selected = edge["target"] in node_ids
             relation_selected = edge["type"] in highlighted_relation_types
+
+            if edge_id in edge_ids:
+                continue
 
             if (source_selected and target_selected) or relation_selected:
                 edge_ids.add(edge_id)
@@ -324,7 +352,8 @@ class QAEngine:
 
         return self._extract_cypher(response_text)
 
-    def _generate_answer(self, document, question, cypher, rows, schema):
+    def _generate_answer(self, document, question, cypher, rows, schema, question_analysis):
+        
         if rows:
             if len(rows) == 1 and len(rows[0]) == 1:
                 return str(next(iter(rows[0].values())))
@@ -334,8 +363,10 @@ class QAEngine:
                 for row in rows:
                     values.extend(row.values())
                 return ", ".join(str(value) for value in values)
-
-        prompt = self._build_answer_prompt(question, cypher, rows, schema)
+        
+        question_analysis_json = json.dumps(question_analysis, ensure_ascii=True)
+        
+        prompt = self._build_answer_prompt(question, cypher, rows, schema, question_analysis_json)
 
         if document.llm_used == "gpt4":
             return self._ask_openai(
@@ -472,7 +503,7 @@ class QAEngine:
     Return only the corrected Cypher query.
     """.strip()
 
-    def _build_answer_prompt(self, question, cypher, rows, schema):
+    def _build_answer_prompt(self, question, cypher, rows, schema, question_analysis_json):
         rows_json = json.dumps(rows, ensure_ascii=True)
         schema_json = json.dumps(schema, ensure_ascii=True)
         style = getattr(settings, "QA_ANSWER_STYLE", "natural")
@@ -499,6 +530,9 @@ class QAEngine:
 
         Cypher used:
         {cypher}
+
+        Question analysis:
+        {question_analysis_json}
 
         Query result rows:
         {rows_json}

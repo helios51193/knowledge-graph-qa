@@ -120,6 +120,7 @@ class QAMessage(models.Model):
     query_rows = models.JSONField(default=list, blank=True)
     provenance = models.JSONField(default=list, blank=True)
     highlight = models.JSONField(default=dict, blank=True)
+    question_analysis = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

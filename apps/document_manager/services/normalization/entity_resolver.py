@@ -148,6 +148,10 @@ def _merge_cross_label_clusters(clusters):
 
 
 def _should_merge(entity, cluster, label):
+    if label == "Person":
+        if any(_looks_like_person_alias(entity, other) for other in cluster):
+            return True
+
     threshold = LABEL_THRESHOLDS.get(label, 0.95)
 
     scores = [
@@ -156,6 +160,36 @@ def _should_merge(entity, cluster, label):
     ]
 
     return max(scores, default=0.0) >= threshold
+
+
+def _looks_like_person_alias(left, right):
+    
+    if left.get("label") != "Person" or right.get("label") != "Person":
+        return False
+
+    left_norm = _normalize_surface(left.get("name", ""))
+    right_norm = _normalize_surface(right.get("name", ""))
+
+    if not left_norm or not right_norm or left_norm == right_norm:
+        return False
+
+    left_tokens = [token for token in left_norm.split() if token]
+    right_tokens = [token for token in right_norm.split() if token]
+
+    if not left_tokens or not right_tokens:
+        return False
+
+    # Case 1: one-token suffix reference like:
+    # "Old Major" -> "Major"
+    # "Mr Jones" -> "Jones"
+    # "John Smith" -> "Smith"
+    if len(left_tokens) == 1 and len(right_tokens) in {2, 3}:
+        return left_tokens[0] == right_tokens[-1]
+
+    if len(right_tokens) == 1 and len(left_tokens) in {2, 3}:
+        return right_tokens[0] == left_tokens[-1]
+
+    return False
 
 
 def _should_merge_clusters(left_cluster, right_cluster):
@@ -206,6 +240,8 @@ def _entity_similarity(left, right):
 
     if _looks_like_plural_variant(left_norm, right_norm):
         score += 0.05
+    
+    score += _person_name_variant_score(left_norm, right_norm,  left.get("label"), right.get("label"))
 
     return min(score, 1.0)
 
@@ -259,6 +295,21 @@ def _choose_canonical_name(cluster):
     names = [entity["name"].strip() for entity in cluster if entity.get("name")]
     if not names:
         return ""
+
+    label_counts = Counter(
+        entity.get("label", "Concept")
+        for entity in cluster
+        if entity.get("label")
+    )
+    dominant_label = max(
+        label_counts.keys(),
+        key=lambda label: (label_counts[label], LABEL_PRIORITY.get(label, 0)),
+        default="Concept",
+    )
+
+    if dominant_label == "Person":
+        candidates = sorted(names, key=lambda name: (-len(name), name.lower()))
+        return candidates[0]
 
     candidates = sorted(names, key=lambda name: (len(name), name.lower()))
     canonical = candidates[0]
@@ -319,4 +370,23 @@ def _restore_case(normalized_text, original_text):
 
     return normalized_text
 
+def _person_name_variant_score(left, right, left_label=None, right_label=None):
+    
+    if left_label != "Person" or right_label != "Person":
+        return 0.0
+
+    left_tokens = left.split()
+    right_tokens = right.split()
+
+    if not left_tokens or not right_tokens:
+        return 0.0
+
+    # Small bonus only for one-token suffix references.
+    if len(left_tokens) == 1 and len(right_tokens) in {2, 3} and left_tokens[0] == right_tokens[-1]:
+        return 0.12
+
+    if len(right_tokens) == 1 and len(left_tokens) in {2, 3} and right_tokens[0] == left_tokens[-1]:
+        return 0.12
+
+    return 0.0
 

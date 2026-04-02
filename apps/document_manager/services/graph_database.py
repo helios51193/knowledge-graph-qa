@@ -36,6 +36,7 @@ def _create_nodes(memgraph, nodes):
         label: $label
     })
     SET n.chunk_id = $chunk_id,
+        n.graph_id = $graph_id,
         n.start_index = $start_index,
         n.end_index = $end_index
     """
@@ -44,6 +45,7 @@ def _create_nodes(memgraph, nodes):
         memgraph.execute(
             query,
             {
+                "graph_id":node['id'],
                 "document_id": node["document_id"],
                 "name": node["name"],
                 "label": node["label"],

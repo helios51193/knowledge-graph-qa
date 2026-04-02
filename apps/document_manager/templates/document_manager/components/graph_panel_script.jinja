@@ -1,0 +1,227 @@
+{% if document.graph_data and document.graph_data.nodes %}
+<script>
+(function () {
+    if (window.currentGraphDocumentId !== "{{ document.id }}") {
+        window.lastGraphHighlightPayload = null;
+    }
+    window.currentGraphDocumentId = "{{ document.id }}";
+    window.lastGraphHighlightPayload = window.lastGraphHighlightPayload || null;
+
+    const graphData = {{ (document.graph_data or { "nodes": [], "edges": [] }) | tojson }};
+
+    function nodeColor(label) {
+        switch (label) {
+            case "Person":
+                return "#3b82f6";
+            case "Location":
+                return "#10b981";
+            case "Organization":
+                return "#f59e0b";
+            case "Concept":
+                return "#6b7280";
+            default:
+                return "#8b5cf6";
+        }
+    }
+
+    const elements = [];
+
+    for (const node of graphData.nodes || []) {
+        elements.push({
+            data: {
+                id: node.id,
+                label: node.label,
+                name: node.name,
+                document_id: node.document_id,
+                provenance: node.provenance || {},
+            }
+        });
+    }
+
+    for (const edge of graphData.edges || []) {
+        elements.push({
+            data: {
+                id: `${edge.source}-${edge.type}-${edge.target}`,
+                source: edge.source,
+                target: edge.target,
+                label: edge.type,
+                type: edge.type,
+                source_name: edge.source_name,
+                target_name: edge.target_name,
+                provenance: edge.provenance || {},
+            }
+        });
+    }
+
+    if (window.documentGraphCy) {
+        window.documentGraphCy.destroy();
+    }
+
+    window.documentGraphCy = cytoscape({
+        container: document.getElementById("graph-view"),
+        elements: elements,
+        layout: {
+            name: "cose",
+            animate: true,
+            fit: true,
+            padding: 30,
+        },
+        style: [
+            {
+                selector: "node",
+                style: {
+                    "background-color": function (ele) {
+                        return nodeColor(ele.data("label"));
+                    },
+                    "label": "data(name)",
+                    "color": "#f3f4f6",
+                    "text-valign": "bottom",
+                    "text-halign": "center",
+                    "font-size": "10px",
+                    "text-margin-y": 8,
+                    "width": 28,
+                    "height": 28,
+                    "border-width": 2,
+                    "border-color": "#ffffff",
+                    "opacity": 1,
+                }
+            },
+            {
+                selector: "edge",
+                style: {
+                    "curve-style": "bezier",
+                    "width": 2,
+                    "line-color": "#94a3b8",
+                    "target-arrow-color": "#94a3b8",
+                    "target-arrow-shape": "triangle",
+                    "arrow-scale": 0.9,
+                    "label": "data(label)",
+                    "font-size": "8px",
+                    "color": "#e5e7eb",
+                    "text-background-color": "#111827",
+                    "text-background-opacity": 0.85,
+                    "text-background-padding": "2px",
+                    "opacity": 1,
+                }
+            },
+            {
+                selector: ".faded",
+                style: {
+                    "opacity": 0.15,
+                    "text-opacity": 0.2,
+                }
+            },
+            {
+                selector: "edge.faded",
+                style: {
+                    "opacity": 0.08,
+                    "text-opacity": 0.1,
+                }
+            },
+            {
+                selector: ".highlighted-node",
+                style: {
+                    "border-width": 4,
+                    "border-color": "#f8fafc",
+                    "width": 38,
+                    "height": 38,
+                    "z-index": 999,
+                    "overlay-opacity": 0,
+                }
+            },
+            {
+                selector: ".highlighted-edge",
+                style: {
+                    "width": 4,
+                    "line-color": "#facc15",
+                    "target-arrow-color": "#facc15",
+                    "opacity": 1,
+                    "z-index": 998,
+                }
+            }
+        ]
+    });
+
+    const cy = window.documentGraphCy;
+
+    cy.on("tap", "node", function (evt) {
+        const node = evt.target;
+        if (typeof window.openGraphEvidenceModalForNode === "function") {
+            window.openGraphEvidenceModalForNode(node.data());
+        }
+    });
+
+    cy.on("tap", "edge", function (evt) {
+        const edge = evt.target;
+        if (typeof window.openGraphEvidenceModalForEdge === "function") {
+            window.openGraphEvidenceModalForEdge(edge.data());
+        }
+    });
+
+    function clearGraphHighlight() {
+        cy.elements().removeClass("faded highlighted-node highlighted-edge");
+    }
+
+    function applyGraphHighlight(payload) {
+        clearGraphHighlight();
+
+        const nodeIds = payload.node_ids || [];
+        const edgeIds = payload.edge_ids || [];
+        const focus = payload.focus !== false;
+
+        if (!nodeIds.length && !edgeIds.length) {
+            return;
+        }
+
+        cy.elements().addClass("faded");
+
+        const nodesToHighlight = cy.collection(
+            nodeIds
+                .map(id => cy.getElementById(id))
+                .filter(ele => ele && ele.length > 0)
+        );
+
+        const edgesToHighlight = cy.collection(
+            edgeIds
+                .map(id => cy.getElementById(id))
+                .filter(ele => ele && ele.length > 0)
+        );
+
+        nodesToHighlight.removeClass("faded").addClass("highlighted-node");
+        edgesToHighlight.removeClass("faded").addClass("highlighted-edge");
+
+        const connectedNodes = edgesToHighlight.connectedNodes();
+        connectedNodes.removeClass("faded");
+
+        const focusElements = nodesToHighlight.union(edgesToHighlight).union(connectedNodes);
+
+        if (focus && focusElements.length > 0) {
+            cy.fit(focusElements, 80);
+        }
+    }
+
+    window.applyDocumentGraphHighlight = applyGraphHighlight;
+
+    const graphResetButton = document.getElementById("reset-graph-btn");
+    if (graphResetButton) {
+        graphResetButton.onclick = function () {
+            clearGraphHighlight();
+            cy.fit(cy.elements(), 30);
+        };
+    }
+
+    const rehighlightGraphButton = document.getElementById("rehighlight-graph-btn");
+    if (rehighlightGraphButton) {
+        rehighlightGraphButton.onclick = function () {
+            if (window.lastGraphHighlightPayload) {
+                applyGraphHighlight(window.lastGraphHighlightPayload);
+            }
+        };
+    }
+
+    if (window.lastGraphHighlightPayload) {
+        applyGraphHighlight(window.lastGraphHighlightPayload);
+    }
+})();
+</script>
+{% endif %}
