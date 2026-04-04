@@ -1,0 +1,52 @@
+{% extends "document_manager/base.jinja" %}
+
+{% block title %}
+Logs - {{ document.name }}
+{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+    <div>
+        <h1 class="text-3xl font-bold">Processing Logs</h1>
+        <p class="text-sm opacity-70">{{ document.name }}</p>
+    </div>
+
+    <div class="flex gap-2">
+        <a href="{{ url('document_manager:download_document_logs', kwargs={'doc_id': document.id}) }}" class="btn btn-outline">
+            Download Logs
+        </a>
+        <a href="{{ url('document_manager:dashboard') }}" class="btn btn-outline">
+            Back To Dashboard
+        </a>
+    </div>
+</div>
+
+<div class="card border border-base-300 bg-base-100 shadow-sm">
+    <div class="card-body">
+        {% if logs %}
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Stage</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                            <tr>
+                                <td>{{ log.created_at }}</td>
+                                <td><span class="badge badge-outline">{{ log.stage }}</span></td>
+                                <td>{{ log.message }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="opacity-70">No processing logs available.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

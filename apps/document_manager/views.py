@@ -9,6 +9,9 @@ from .forms import DocumentUploadForm
 from .tasks import process_document
 from .services.qa.qa_engine import QAEngine
 
+from django.http import HttpResponse
+from .models import ProcessingLog
+
 
 @login_required
 def document_dashboard(request):
@@ -269,3 +272,34 @@ def graph_panel(request, doc_id):
             "document": document,
         },
     )
+
+@login_required
+def document_logs_page(request, doc_id):
+    document = get_object_or_404(Document, id=doc_id, user=request.user)
+    logs = document.processing_logs.all().order_by("created_at")
+
+    return render(
+        request,
+        "document_manager/document_logs.jinja",
+        {
+            "document": document,
+            "logs": logs,
+        },
+    )
+
+@login_required
+def download_document_logs(request, doc_id):
+    document = get_object_or_404(Document, id=doc_id, user=request.user)
+    logs = document.processing_logs.all().order_by("created_at")
+
+    lines = []
+    for log in logs:
+        timestamp = log.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        lines.append(f"[{timestamp}] [{log.stage}] {log.message}")
+
+    content = "\n".join(lines) if lines else "No processing logs available."
+
+    response = HttpResponse(content, content_type="text/plain; charset=utf-8")
+    safe_name = document.name.replace(" ", "_")
+    response["Content-Disposition"] = f'attachment; filename="{safe_name}_processing_logs.txt"'
+    return response

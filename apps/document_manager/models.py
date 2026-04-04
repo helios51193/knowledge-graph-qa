@@ -47,6 +47,7 @@ class Document(models.Model):
     progress = models.IntegerField(default=0)
     processing_time = models.FloatField(null=True, blank=True)
     error_message = models.TextField(blank=True)
+    estimated_tokens = models.IntegerField(default=0, blank=True, null=True)
     status = models.CharField(
         max_length=50,
         choices=STATUS_CHOICES,

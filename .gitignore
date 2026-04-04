@@ -3,6 +3,8 @@ env
 __pycache__
 *.sqlite3
 .venv
+.env.docker
 logs
 documents
+staticfiles
 _test_documents

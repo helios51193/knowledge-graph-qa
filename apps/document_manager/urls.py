@@ -19,4 +19,6 @@ urlpatterns = [
                 path("qa/<int:doc_id>", views.document_qa_sessions_page, name="qa_sessions"),
                 path("qa/<int:doc_id>/<int:session_id>", views.document_qa_page, name="qa_page"),
                 
+                path("logs/<int:doc_id>", views.document_logs_page, name="document_logs"),
+                path("logs/<int:doc_id>/download", views.download_document_logs, name="download_document_logs"),
                 path("dashboard", views.document_dashboard, name="dashboard"),]

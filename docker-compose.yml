@@ -1,0 +1,56 @@
+services:
+  web:
+    build: .
+    container_name: ${WEB_CONTAINER_NAME}
+    command: sh /app/docker-entrypoint.sh python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "${WEB_PORT}:8000"
+    volumes:
+      - .:/app
+    env_file:
+      - .env.docker
+    depends_on:
+      - db
+      - redis
+      - memgraph
+
+  celery:
+    build: .
+    container_name: ${CELERY_CONTAINER_NAME}
+    command: celery -A knowledge_graph worker -l info
+    volumes:
+      - .:/app
+    env_file:
+      - .env.docker
+    depends_on:
+      - db
+      - redis
+      - memgraph
+
+  db:
+    image: postgres:16
+    container_name: ${POSTGRES_CONTAINER_NAME}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: ${REDIS_CONTAINER_NAME}
+    ports:
+      - "${REDIS_PORT}:6379"
+
+  memgraph:
+    image: memgraph/memgraph:latest
+    container_name: ${MEMGRAPH_CONTAINER_NAME}
+    ports:
+      - "${MG_PORT}:7687"
+      - "${MEMGRAPH_LAB_PORT}:7444"
+
+volumes:
+  postgres_data:

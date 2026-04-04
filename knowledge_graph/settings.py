@@ -27,7 +27,9 @@ SECRET_KEY = os.getenv("DJANGO_SECRET",'django-insecure-f91t#-h^k=ypzga*-wlidx6f
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True if os.getenv("ENVIRONMENT","local") == "local" else False
 
-ALLOWED_HOSTS = ["localhost","127.0.0.1"] + (os.getenv("ALLOWED_HOSTS","").split(",") if os.getenv("ALLOWED_HOSTS") else [])
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0"] + (
+    os.getenv("ALLOWED_HOSTS", "").split(",") if os.getenv("ALLOWED_HOSTS") else []
+)
 
 # Application definition
 
@@ -93,13 +95,26 @@ WSGI_APPLICATION = 'knowledge_graph.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+DB_ENGINE = os.getenv("DB_ENGINE", "sqlite")
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+if DB_ENGINE == "postgres":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("POSTGRES_DB", "knowledge_graph"),
+            "USER": os.getenv("POSTGRES_USER", "postgres"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "postgres"),
+            "HOST": os.getenv("POSTGRES_HOST", "db"),
+            "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 
 # Password validation
@@ -142,7 +157,7 @@ AUTH_USER_MODEL = "auth_manager.User"
 
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
@@ -167,8 +182,8 @@ MG_PORT = os.getenv("MG_PORT","7687")
 # LLM
 LLM_PROVIDER = os.getenv("LLM_PROVIDER","OPENAI")
 OPEN_AI_KEY = os.getenv("OPEN_AI_KEY","")
-OLLAMA_HOST = "localhost"
-OLLAMA_PORT = "11434"
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
+OLLAMA_PORT = os.getenv("OLLAMA_PORT", "11434")
 
 # Celery
 BROKER_HOST= os.getenv("CELERY_BROKER_HOST","localhost")
@@ -202,7 +217,7 @@ RELATION_LLM_TEMPERATURE = 0
 RELATION_LLM_TIMEOUT = 90
 
 # GRAPH
-CLEAR_GRAPH_BEFORE_INSERT = True
+CLEAR_GRAPH_BEFORE_INSERT = False
 
 # QA
 QA_LLM_TEMPERATURE = 0

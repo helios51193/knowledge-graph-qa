@@ -1,8 +1,8 @@
 <div class="card bg-base-100 shadow">
 
-    <div class="card-body p-0">
+    <div class="card-body p-0 overflow-x-auto">
 
-        <table class="table w-full">
+        <table class="table w-full min-w-[1100px]">
 
             <thead>
 
@@ -12,6 +12,7 @@
                     <th>Edges</th>
                     <th>Relations</th>
                     <th>LLM</th>
+                    <th>Estimated Tokens</th>
                     <th>Processing Time</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -30,6 +31,13 @@
                     <td> {{ doc.edges }} </td>
                     <td> {{ doc.relations }} </td>
                     <td> {{ doc.llm_used }} </td>
+                    <td>
+                        {% if doc.estimated_tokens %}
+                            {{ "{:,}".format(doc.estimated_tokens) }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
                     <td>
                         {% if doc.processing_time %}
                             {{ "%.2f"|format(doc.processing_time) }} s
@@ -82,10 +90,14 @@
                                 Open QA
                             </span>
                         {% endif %}
+                        <a
+                            class="btn btn-sm btn-ghost"
+                            href="{{ url('document_manager:document_logs', kwargs={'doc_id': doc.id}) }}"
+                        >
+                            Logs
+                        </a>
                     </td>
-
                 </tr>
-
                 {% endfor %}
 
             </tbody>

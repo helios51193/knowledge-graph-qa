@@ -15,6 +15,7 @@ from .normalization.entity_resolver import (
     apply_entity_resolution_to_relations,
     resolve_entities,
 )
+from .token_estimator import estimate_tokens_from_text
 from .chunking.chunk_metrics import build_chunk_metrics
 from ..models import Document
 
@@ -24,6 +25,9 @@ def process_document_pipeline(document:Document):
    update_progress(document, 10)
 
    normalized_text = normalize_document_text(document, text)
+   estimated_tokens = estimate_tokens_from_text(normalized_text)
+   document.estimated_tokens = estimated_tokens
+   document.save(update_fields=["estimated_tokens"])
    update_progress(document, 20)
    
    original_chunks = chunk_text(document, normalized_text)
