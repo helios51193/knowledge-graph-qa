@@ -1,69 +1,86 @@
-from pprint import pprint
+from typing import Any
+
+from ..models import Document
 from .chunking.chunk import Chunk
-from .chunking.factory import get_chunker
-from .normalization.text_normalizer import normalize_document_text
-from .logger import log_stage
-from .coreference.coreference_resolver import resolve_coreferences
-from .extraction.text_extractor import extract_text
+from .chunking.chunk_metrics import build_chunk_metrics
 from .chunking.chunker import chunk_text
+from .chunking.factory import get_chunker
+from .coreference.coreference_resolver import resolve_coreferences
 from .entity_extraction.entity_extractor import extract_entities
-from .relation_extraction.relation_extractor import extract_relations
+from .extraction.text_extractor import extract_text
 from .graph_building.graph_builder import build_graph
-from .logger import log_stage, update_progress
 from .graph_building.graph_metrics import build_graph_metrics
+from .logger import log_stage, update_progress
 from .normalization.entity_resolver import (
     apply_entity_resolution_to_relations,
     resolve_entities,
 )
+from .normalization.text_normalizer import normalize_document_text
+from .relation_extraction.relation_extractor import extract_relations
 from .token_estimator import estimate_tokens_from_text
-from .chunking.chunk_metrics import build_chunk_metrics
-from ..models import Document
 
-def process_document_pipeline(document:Document):
-    
-   text = extract_text(document)
-   update_progress(document, 10)
 
-   normalized_text = normalize_document_text(document, text)
-   estimated_tokens = estimate_tokens_from_text(normalized_text)
-   document.estimated_tokens = estimated_tokens
-   document.save(update_fields=["estimated_tokens"])
-   update_progress(document, 20)
-   
-   original_chunks = chunk_text(document, normalized_text)
-   chunk_metrics = build_chunk_metrics(original_chunks)
-   update_progress(document, 30)
-   
-   coreference_result = resolve_coreferences(document, normalized_text)
-   analysis_chunks = _build_relation_chunks(
+def process_document_pipeline(document: Document) -> dict[str, Any]:
+    """
+    Run the full document-to-graph processing pipeline and return pipeline artifacts.
+
+    The pipeline:
+    - extracts and normalizes text
+    - estimates token count
+    - builds original chunks
+    - applies coreference-aware relation chunking
+    - extracts entities and relations
+    - resolves duplicate entities and labels
+    - builds the graph and quality metrics
+    """
+    text = extract_text(document)
+    update_progress(document, 10)
+
+    normalized_text = normalize_document_text(document, text)
+    estimated_tokens = estimate_tokens_from_text(normalized_text)
+    document.estimated_tokens = estimated_tokens
+    document.save(update_fields=["estimated_tokens"])
+    update_progress(document, 20)
+
+    original_chunks = chunk_text(document, normalized_text)
+    chunk_metrics = build_chunk_metrics(original_chunks)
+    update_progress(document, 30)
+
+    coreference_result = resolve_coreferences(document, normalized_text)
+    analysis_chunks = _build_relation_chunks(
         document=document,
         original_chunks=original_chunks,
         resolved_text=coreference_result["resolved_text"],
     )
-   relation_chunks = _build_adjacent_relation_windows(analysis_chunks)
-   update_progress(document, 45)
+    relation_chunks = _build_adjacent_relation_windows(analysis_chunks)
+    update_progress(document, 45)
 
-   entities = extract_entities(original_chunks, document.llm_used, document=document)
-   update_progress(document, 60)
+    entities = extract_entities(original_chunks, document.llm_used, document=document)
+    update_progress(document, 60)
 
-   relations = extract_relations(relation_chunks, entities, llm=document.llm_used, document=document)
-   update_progress(document, 75)
+    relations = extract_relations(
+        relation_chunks,
+        entities,
+        llm=document.llm_used,
+        document=document,
+    )
+    update_progress(document, 75)
 
-   log_stage(document, "ENTITY_RESOLUTION", "Starting entity normalization")
+    log_stage(document, "ENTITY_RESOLUTION", "Starting entity normalization")
 
-   resolved_entities, canonical_map, label_summary = resolve_entities(entities)
-   resolved_relations = apply_entity_resolution_to_relations(relations, canonical_map)
+    resolved_entities, canonical_map, label_summary = resolve_entities(entities)
+    resolved_relations = apply_entity_resolution_to_relations(relations, canonical_map)
 
-   log_stage(document, "ENTITY_RESOLUTION", "Entity normalization completed")
-   update_progress(document, 85)
-    
-   graph = build_graph(resolved_entities, resolved_relations)
-   update_progress(document, 90)
+    log_stage(document, "ENTITY_RESOLUTION", "Entity normalization completed")
+    update_progress(document, 85)
 
-   graph_metrics = build_graph_metrics(graph)
-   log_stage(
-    document,
-    "GRAPH_BUILDING",
+    graph = build_graph(resolved_entities, resolved_relations)
+    update_progress(document, 90)
+
+    graph_metrics = build_graph_metrics(graph)
+    log_stage(
+        document,
+        "GRAPH_BUILDING",
         (
             f"Graph metrics | "
             f"nodes={graph_metrics['node_count']} | "
@@ -75,20 +92,30 @@ def process_document_pipeline(document:Document):
             f"density={graph_metrics['density']}"
         ),
     )
-   res = {
-       "chunks":original_chunks,
-       "entities":resolved_entities,
-       "relation":resolved_relations,
-       "graph":graph,
-       "coreference":coreference_result,
-       "label_summary": label_summary,
-       "chunk_metrics": chunk_metrics,
-       "graph_metrics": graph_metrics,
+
+    return {
+        "chunks": original_chunks,
+        "entities": resolved_entities,
+        "relation": resolved_relations,
+        "graph": graph,
+        "coreference": coreference_result,
+        "label_summary": label_summary,
+        "chunk_metrics": chunk_metrics,
+        "graph_metrics": graph_metrics,
     }
 
-   return res
 
-def _build_relation_chunks(document, original_chunks, resolved_text):
+def _build_relation_chunks(
+    document: Document,
+    original_chunks: list[Chunk],
+    resolved_text: str,
+) -> list[Chunk]:
+    """
+    Rebuild chunks from resolved text so relation extraction can use analysis text.
+
+    If coreference resolution changes chunk boundaries, the pipeline falls back
+    to the original chunks to preserve chunk alignment and provenance stability.
+    """
     chunker = get_chunker()
     resolved_chunks = chunker.chunk(resolved_text, document.id)
 
@@ -100,7 +127,7 @@ def _build_relation_chunks(document, original_chunks, resolved_text):
         )
         return original_chunks
 
-    relation_chunks = []
+    relation_chunks: list[Chunk] = []
 
     for original_chunk, resolved_chunk in zip(original_chunks, resolved_chunks):
         relation_chunks.append(
@@ -116,11 +143,18 @@ def _build_relation_chunks(document, original_chunks, resolved_text):
 
     return relation_chunks
 
-def _build_adjacent_relation_windows(chunks):
+
+def _build_adjacent_relation_windows(chunks: list[Chunk]) -> list[Chunk]:
+    """
+    Build relation-analysis windows that combine adjacent chunks.
+
+    This gives relation extraction a little more local context without replacing
+    the original chunk boundaries used for provenance and entity extraction.
+    """
     if not chunks:
         return []
 
-    windows = []
+    windows: list[Chunk] = []
 
     for idx, chunk in enumerate(chunks):
         next_chunk = chunks[idx + 1] if idx + 1 < len(chunks) else None
@@ -132,7 +166,8 @@ def _build_adjacent_relation_windows(chunks):
         combined_text = f"{chunk.text} {next_chunk.text}".strip()
 
         combined_analysis_text = " ".join(
-            part for part in [
+            part
+            for part in [
                 chunk.analysis_text or chunk.text,
                 next_chunk.analysis_text or next_chunk.text,
             ]

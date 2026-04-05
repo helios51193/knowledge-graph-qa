@@ -1,22 +1,33 @@
 import json
 import re
+from typing import Any
 
 import requests
 from django.conf import settings
 from openai import OpenAI
-from .question_intents import analyze_question
-from .intent_queries import build_intent_cypher
 
+from ...models import Document
 from ..graph_database import execute_read_query
+from .intent_queries import build_intent_cypher
+from .question_intents import analyze_question
 
 
 READ_ONLY_PREFIXES = ("MATCH", "OPTIONAL MATCH", "WITH", "RETURN", "CALL")
 
 
 class QAEngine:
+    """
+    Answer natural-language questions over a document-scoped graph in Memgraph.
 
-    def answer_question(self, document, question):
-        
+    The engine supports a hybrid strategy:
+    - deterministic intent-based query building for supported question types
+    - generic LLM-based Cypher generation as a fallback
+    """
+
+    def answer_question(self, document: Document, question: str) -> dict[str, Any]:
+        """
+        Generate Cypher, execute it, build an answer, and return explainability payloads.
+        """
         schema = self._build_graph_schema(document)
         question_analysis = analyze_question(question, document.graph_data or {})
 
@@ -59,12 +70,23 @@ class QAEngine:
             "cypher": cypher,
             "rows": rows,
             "answer": answer,
-            "highlight":highlight,
-            "provenance":provenance,
+            "highlight": highlight,
+            "provenance": provenance,
             "question_analysis": question_analysis,
         }
-    
-    def _build_highlight_payload(self, document, rows):
+
+    def _build_highlight_payload(
+        self,
+        document: Document,
+        rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """
+        Build a graph highlight payload from query result rows.
+
+        This supports both:
+        - explicit path-based highlighting from path queries
+        - generic name/relation-type-based fallback highlighting
+        """
         graph_data = document.graph_data or {}
         nodes = graph_data.get("nodes", [])
         edges = graph_data.get("edges", [])
@@ -75,13 +97,13 @@ class QAEngine:
             if node.get("name") and node.get("id")
         }
 
-        edge_ids = set()
-        node_ids = set()
-        highlighted_names = set()
-        highlighted_relation_types = set()
+        edge_ids: set[str] = set()
+        node_ids: set[str] = set()
+        highlighted_names: set[str] = set()
+        highlighted_relation_types: set[str] = set()
 
         for row in rows:
-            # Path-specific direct highlighting
+            # Path queries can return explicit graph ids for precise highlighting.
             for node_id in row.get("path_node_ids", []):
                 if node_id:
                     node_ids.add(node_id)
@@ -94,7 +116,6 @@ class QAEngine:
                 if source and target and rel_type:
                     edge_ids.add(f"{source}-{rel_type}-{target}")
 
-            # Generic fallback highlighting
             self._collect_highlight_values(
                 value=row,
                 highlighted_names=highlighted_names,
@@ -109,12 +130,12 @@ class QAEngine:
         for edge in edges:
             edge_id = f'{edge["source"]}-{edge["type"]}-{edge["target"]}'
 
+            if edge_id in edge_ids:
+                continue
+
             source_selected = edge["source"] in node_ids
             target_selected = edge["target"] in node_ids
             relation_selected = edge["type"] in highlighted_relation_types
-
-            if edge_id in edge_ids:
-                continue
 
             if (source_selected and target_selected) or relation_selected:
                 edge_ids.add(edge_id)
@@ -124,8 +145,16 @@ class QAEngine:
             "edge_ids": sorted(edge_ids),
             "focus": True,
         }
-    
-    def _collect_highlight_values(self, value, highlighted_names, highlighted_relation_types):
+
+    def _collect_highlight_values(
+        self,
+        value: Any,
+        highlighted_names: set[str],
+        highlighted_relation_types: set[str],
+    ) -> None:
+        """
+        Recursively collect entity names and relation types from result rows.
+        """
         if isinstance(value, dict):
             for key, inner_value in value.items():
                 key_lower = str(key).lower()
@@ -165,7 +194,14 @@ class QAEngine:
                     highlighted_relation_types,
                 )
 
-    def _build_provenance_payload(self, document, highlight):
+    def _build_provenance_payload(
+        self,
+        document: Document,
+        highlight: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """
+        Build provenance/evidence entries for the currently highlighted graph subset.
+        """
         graph_data = document.graph_data or {}
         nodes = graph_data.get("nodes", [])
         edges = graph_data.get("edges", [])
@@ -177,7 +213,7 @@ class QAEngine:
             if edge.get("source") and edge.get("type") and edge.get("target")
         }
 
-        evidence = []
+        evidence: list[dict[str, Any]] = []
 
         for node_id in highlight.get("node_ids", []):
             node = node_map.get(node_id)
@@ -190,18 +226,20 @@ class QAEngine:
             if not source_text:
                 continue
 
-            evidence.append({
-                "kind": "node",
-                "title": f'{node.get("name")} ({node.get("label")})',
-                "chunk_id": provenance.get("chunk_id"),
-                "start_index": provenance.get("start_index"),
-                "end_index": provenance.get("end_index"),
-                "source_text": source_text,
-                "snippet": self._build_text_snippet(
-                            source_text=source_text,
-                            terms=[node.get("name", "")],
-                ),
-            })
+            evidence.append(
+                {
+                    "kind": "node",
+                    "title": f'{node.get("name")} ({node.get("label")})',
+                    "chunk_id": provenance.get("chunk_id"),
+                    "start_index": provenance.get("start_index"),
+                    "end_index": provenance.get("end_index"),
+                    "source_text": source_text,
+                    "snippet": self._build_text_snippet(
+                        source_text=source_text,
+                        terms=[node.get("name", "")],
+                    ),
+                }
+            )
 
         for edge_id in highlight.get("edge_ids", []):
             edge = edge_map.get(edge_id)
@@ -214,27 +252,29 @@ class QAEngine:
             if not source_text:
                 continue
 
-            evidence.append({
-                "kind": "edge",
-                "title": f'{edge.get("source_name")} -[{edge.get("type")}]-> {edge.get("target_name")}',
-                "chunk_id": provenance.get("chunk_id"),
-                "start_index": provenance.get("start_index"),
-                "end_index": provenance.get("end_index"),
-                "source_text": source_text,
-                "snippet": self._build_text_snippet(
-                source_text=source_text,
-                terms=[
-                    edge.get("source_name", ""),
-                    edge.get("target_name", ""),
-                    edge.get("type", ""),
-                ],
-            ),
+            evidence.append(
+                {
+                    "kind": "edge",
+                    "title": f'{edge.get("source_name")} -[{edge.get("type")}]-> {edge.get("target_name")}',
+                    "chunk_id": provenance.get("chunk_id"),
+                    "start_index": provenance.get("start_index"),
+                    "end_index": provenance.get("end_index"),
+                    "source_text": source_text,
+                    "snippet": self._build_text_snippet(
+                        source_text=source_text,
+                        terms=[
+                            edge.get("source_name", ""),
+                            edge.get("target_name", ""),
+                            edge.get("type", ""),
+                        ],
+                    ),
+                }
+            )
 
-            })
+        unique_evidence: list[dict[str, Any]] = []
+        seen: set[tuple[Any, ...]] = set()
 
-        unique_evidence = []
-        seen = set()
-
+        # Deduplicate repeated evidence so the explainability modal stays concise.
         for item in evidence:
             key = (
                 item["kind"],
@@ -249,13 +289,20 @@ class QAEngine:
 
         return unique_evidence[:6]
 
-    def _build_text_snippet(self, source_text, terms, window=140):
+    def _build_text_snippet(
+        self,
+        source_text: str,
+        terms: list[str],
+        window: int = 140,
+    ) -> str:
+        """
+        Build a short evidence snippet centered around the first matched term.
+        """
         text = (source_text or "").strip()
         if not text:
             return ""
 
         lower_text = text.lower()
-
         match_index = -1
         match_term = ""
 
@@ -287,19 +334,23 @@ class QAEngine:
 
         return snippet
 
-    def _build_graph_schema(self, document):
+    def _build_graph_schema(self, document: Document) -> dict[str, Any]:
+        """
+        Build a compact schema summary from the serialized graph data.
+        """
         graph_data = document.graph_data or {}
-
         nodes = graph_data.get("nodes", [])
         edges = graph_data.get("edges", [])
 
         node_labels = sorted({node.get("label", "Entity") for node in nodes})
         relation_types = sorted({edge.get("type", "RELATED_TO") for edge in edges})
-        sample_entity_names = sorted({
-            node.get("name", "")
-            for node in nodes
-            if node.get("name")
-        })[:25]
+        sample_entity_names = sorted(
+            {
+                node.get("name", "")
+                for node in nodes
+                if node.get("name")
+            }
+        )[:25]
 
         return {
             "document_id": document.id,
@@ -310,7 +361,15 @@ class QAEngine:
             "sample_entity_names": sample_entity_names,
         }
 
-    def _generate_cypher(self, document, question, schema):
+    def _generate_cypher(
+        self,
+        document: Document,
+        question: str,
+        schema: dict[str, Any],
+    ) -> str:
+        """
+        Ask the configured LLM to generate a Cypher query for the question.
+        """
         prompt = self._build_cypher_prompt(document, question, schema)
 
         if document.llm_used == "gpt4":
@@ -328,7 +387,17 @@ class QAEngine:
 
         return self._extract_cypher(response_text)
 
-    def _repair_cypher_on_error(self, document, question, schema, bad_cypher, error_message):
+    def _repair_cypher_on_error(
+        self,
+        document: Document,
+        question: str,
+        schema: dict[str, Any],
+        bad_cypher: str,
+        error_message: str,
+    ) -> str:
+        """
+        Ask the configured LLM to repair a failed Cypher query.
+        """
         prompt = self._build_cypher_repair_prompt(
             document=document,
             question=question,
@@ -352,28 +421,47 @@ class QAEngine:
 
         return self._extract_cypher(response_text)
 
-    def _generate_answer(self, document, question, cypher, rows, schema, question_analysis):
-        
+    def _generate_answer(
+        self,
+        document: Document,
+        question: str,
+        cypher: str,
+        rows: list[dict[str, Any]],
+        schema: dict[str, Any],
+        question_analysis: dict[str, Any],
+    ) -> str:
+        """
+        Convert query rows into a natural-language answer.
+
+        For very small result shapes, this method returns a direct lightweight
+        answer without invoking the LLM.
+        """
         if rows:
             if len(rows) == 1 and len(rows[0]) == 1:
                 return str(next(iter(rows[0].values())))
 
             if all(len(row) == 1 for row in rows):
-                values = []
+                values: list[Any] = []
                 for row in rows:
                     values.extend(row.values())
                 return ", ".join(str(value) for value in values)
-        
+
         question_analysis_json = json.dumps(question_analysis, ensure_ascii=True)
-        
-        prompt = self._build_answer_prompt(question, cypher, rows, schema, question_analysis_json)
+        prompt = self._build_answer_prompt(
+            question,
+            cypher,
+            rows,
+            schema,
+            question_analysis_json,
+        )
 
         if document.llm_used == "gpt4":
             return self._ask_openai(
                 prompt,
                 model=getattr(settings, "OPENAI_QA_MODEL", "gpt-4o-mini"),
             )
-        elif document.llm_used == "llama3":
+
+        if document.llm_used == "llama3":
             return self._ask_ollama(
                 prompt,
                 model=getattr(settings, "OLLAMA_QA_MODEL", "llama3"),
@@ -381,7 +469,15 @@ class QAEngine:
 
         raise ValueError(f"Unsupported LLM for QA: {document.llm_used}")
 
-    def _build_cypher_prompt(self, document, question, schema):
+    def _build_cypher_prompt(
+        self,
+        document: Document,
+        question: str,
+        schema: dict[str, Any],
+    ) -> str:
+        """
+        Build the prompt used for generic LLM Cypher generation.
+        """
         schema_json = json.dumps(schema, ensure_ascii=True)
 
         return f"""
@@ -464,7 +560,17 @@ class QAEngine:
         {question}
         """.strip()
 
-    def _build_cypher_repair_prompt(self, document, question, schema, bad_cypher, error_message):
+    def _build_cypher_repair_prompt(
+        self,
+        document: Document,
+        question: str,
+        schema: dict[str, Any],
+        bad_cypher: str,
+        error_message: str,
+    ) -> str:
+        """
+        Build the prompt used to repair a failed Cypher query.
+        """
         schema_json = json.dumps(schema, ensure_ascii=True)
 
         return f"""
@@ -503,10 +609,21 @@ class QAEngine:
     Return only the corrected Cypher query.
     """.strip()
 
-    def _build_answer_prompt(self, question, cypher, rows, schema, question_analysis_json):
+    def _build_answer_prompt(
+        self,
+        question: str,
+        cypher: str,
+        rows: list[dict[str, Any]],
+        schema: dict[str, Any],
+        question_analysis_json: str,
+    ) -> str:
+        """
+        Build the prompt used to turn query results into a grounded answer.
+        """
         rows_json = json.dumps(rows, ensure_ascii=True)
         schema_json = json.dumps(schema, ensure_ascii=True)
         style = getattr(settings, "QA_ANSWER_STYLE", "natural")
+
         return f"""
         Answer the user's question using the query result below.
 
@@ -538,7 +655,10 @@ class QAEngine:
         {rows_json}
         """.strip()
 
-    def _ask_openai(self, prompt, model):
+    def _ask_openai(self, prompt: str, model: str) -> str:
+        """
+        Send a prompt to OpenAI and return the text response.
+        """
         client = OpenAI(api_key=settings.OPEN_AI_KEY)
 
         response = client.chat.completions.create(
@@ -547,18 +667,21 @@ class QAEngine:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a graph question answering assistant."
+                    "content": "You are a graph question answering assistant.",
                 },
                 {
                     "role": "user",
-                    "content": prompt
-                }
-            ]
+                    "content": prompt,
+                },
+            ],
         )
 
         return response.choices[0].message.content.strip()
 
-    def _ask_ollama(self, prompt, model):
+    def _ask_ollama(self, prompt: str, model: str) -> str:
+        """
+        Send a prompt to Ollama and return the text response.
+        """
         response = requests.post(
             f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
             json={
@@ -566,8 +689,8 @@ class QAEngine:
                 "prompt": prompt,
                 "stream": False,
                 "options": {
-                    "temperature": getattr(settings, "QA_LLM_TEMPERATURE", 0)
-                }
+                    "temperature": getattr(settings, "QA_LLM_TEMPERATURE", 0),
+                },
             },
             timeout=getattr(settings, "QA_LLM_TIMEOUT", 90),
         )
@@ -576,7 +699,10 @@ class QAEngine:
         data = response.json()
         return data.get("response", "").strip()
 
-    def _extract_cypher(self, response_text):
+    def _extract_cypher(self, response_text: str) -> str:
+        """
+        Strip code fences from a model response and return raw Cypher text.
+        """
         text = response_text.strip()
 
         if text.startswith("```"):
@@ -585,7 +711,10 @@ class QAEngine:
 
         return text.strip()
 
-    def _validate_read_only_query(self, cypher):
+    def _validate_read_only_query(self, cypher: str) -> None:
+        """
+        Validate that generated Cypher is read-only and document-scoped.
+        """
         upper = cypher.upper()
 
         forbidden = [
@@ -604,6 +733,7 @@ class QAEngine:
             if token in upper:
                 raise ValueError(f"Unsafe Cypher generated: contains '{token.strip()}'")
 
+        # Require a read-only starting clause and document scoping for safety.
         if not upper.startswith(READ_ONLY_PREFIXES):
             raise ValueError("Generated Cypher is not read-only.")
 

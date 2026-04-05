@@ -1,8 +1,22 @@
-def build_graph(entities, relations):
-    node_index = {}
-    edge_index = set()
-    nodes = []
-    edges = []
+from typing import Any
+
+
+def build_graph(
+    entities: list[dict[str, Any]],
+    relations: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """
+    Build a serialized graph structure from resolved entities and relations.
+
+    The resulting graph is suitable for:
+    - storing in `Document.graph_data`
+    - rendering in the QA graph viewer
+    - persisting into Memgraph
+    """
+    node_index: dict[tuple[int, str, str], dict[str, Any]] = {}
+    edge_index: set[tuple[int, str, str, str]] = set()
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
 
     for entity in entities:
         entity_name = entity.get("canonical_name", entity["name"])
@@ -49,12 +63,23 @@ def build_graph(entities, relations):
         if edge_key in edge_index:
             continue
 
-        source_node = _find_node(nodes, relation["document_id"], relation["source"], relation.get("source_label"),)
-        target_node = _find_node(nodes, relation["document_id"], relation["target"], relation.get("target_label"),)
+        source_node = _find_node(
+            nodes,
+            relation["document_id"],
+            relation["source"],
+            relation.get("source_label"),
+        )
+        target_node = _find_node(
+            nodes,
+            relation["document_id"],
+            relation["target"],
+            relation.get("target_label"),
+        )
 
         if source_node is None or target_node is None:
             continue
 
+        # Skip self-loop edges created by identical resolved endpoints.
         if source_node["id"] == target_node["id"]:
             continue
 
@@ -93,7 +118,15 @@ def build_graph(entities, relations):
     }
 
 
-def _find_node(nodes, document_id, name, label=None):
+def _find_node(
+    nodes: list[dict[str, Any]],
+    document_id: int,
+    name: str,
+    label: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Find a graph node by document, normalized name, and optional label.
+    """
     normalized_name = name.strip().lower()
     normalized_label = label.strip() if label else None
 

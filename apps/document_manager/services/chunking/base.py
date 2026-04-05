@@ -1,6 +1,12 @@
-class BaseChunker:
+from .chunk import Chunk
 
-    def chunk(self, text, document_id):
+
+class BaseChunker:
+    """
+    Base interface for all chunking strategies.
+    """
+
+    def chunk(self, text: str, document_id: int) -> list[Chunk]:
         """
         Return a list of Chunk objects for the given document text.
         """

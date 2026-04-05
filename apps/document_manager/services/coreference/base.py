@@ -1,12 +1,17 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class BaseCoreferenceResolver(ABC):
+    """
+    Base interface for coreference resolution implementations.
+    """
 
     @abstractmethod
-    def resolve(self, text):
+    def resolve(self, text: str) -> dict[str, Any]:
         """
-        Returns a dict with:
+        Resolve coreferences in text and return:
+
         - original_text
         - resolved_text
         - clusters

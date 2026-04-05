@@ -1,4 +1,17 @@
-def build_intent_cypher(document, question_analysis):
+from typing import Any
+
+from ...models import Document
+
+
+def build_intent_cypher(
+    document: Document,
+    question_analysis: dict[str, Any],
+) -> str | None:
+    """
+    Build deterministic Cypher for a supported QA intent.
+
+    Returns None when the question should fall back to generic LLM Cypher generation.
+    """
     intent = question_analysis.get("intent")
     matched_entities = question_analysis.get("matched_entities", [])
 
@@ -10,7 +23,7 @@ def build_intent_cypher(document, question_analysis):
             AND toLower(n.name) = toLower("{_escape(entity_name)}")
             RETURN n.name AS entity_name, n.label AS label
             LIMIT 1
-            """.strip()
+        """.strip()
 
     if intent == "lookup_summary" and matched_entities:
         entity_name = matched_entities[0]
@@ -28,7 +41,7 @@ def build_intent_cypher(document, question_analysis):
                     relation: type(r)
                 }}) AS related_entities
             LIMIT 1
-            """.strip()
+        """.strip()
 
     if intent == "relationship_path" and len(matched_entities) >= 2:
         left = matched_entities[0]
@@ -56,11 +69,11 @@ def build_intent_cypher(document, question_analysis):
                 [node IN nodes(p) | {{graph_id: node.graph_id, name: node.name, label: node.label}}] AS path_nodes,
                 [node IN nodes(p) | node.graph_id] AS path_node_ids,
                 [i IN range(0, length(p) - 1) |
-                        {{
-                            source: nodes(p)[i].graph_id,
-                            target: nodes(p)[i + 1].graph_id,
-                            type: type(relationships(p)[i])
-                        }}
+                    {{
+                        source: nodes(p)[i].graph_id,
+                        target: nodes(p)[i + 1].graph_id,
+                        type: type(relationships(p)[i])
+                    }}
                 ] AS path_edges,
                 [rel IN relationships(p) | type(rel)] AS path_relations,
                 length(p) AS path_length
@@ -79,7 +92,7 @@ def build_intent_cypher(document, question_analysis):
                 degree
             ORDER BY degree DESC, entity_name ASC
             LIMIT 10
-            """.strip()
+        """.strip()
 
     if intent == "ranking_influence":
         return f"""
@@ -93,10 +106,13 @@ def build_intent_cypher(document, question_analysis):
                 influence_score
             ORDER BY influence_score DESC, entity_name ASC
             LIMIT 10
-            """.strip()
+        """.strip()
 
     return None
 
 
-def _escape(value):
+def _escape(value: Any) -> str:
+    """
+    Escape a string for safe interpolation into a Cypher string literal.
+    """
     return str(value or "").replace("\\", "\\\\").replace('"', '\\"')

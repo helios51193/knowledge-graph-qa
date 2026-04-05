@@ -1,16 +1,25 @@
 import re
+from typing import Any
 
 from django.conf import settings
 from gqlalchemy import Memgraph
 
-def save_graph_to_database(document, graph_data):
+from ..models import Document
+
+
+def save_graph_to_database(document: Document, graph_data: dict[str, Any]) -> None:
+    """
+    Replace the current document's graph in Memgraph with the latest graph data.
+
+    The normal behavior is document-scoped replacement: delete the existing graph
+    for this document and then insert the regenerated nodes and edges.
+    """
     memgraph = Memgraph(
         host=settings.MG_HOST,
         port=int(settings.MG_PORT),
     )
 
     if getattr(settings, "CLEAR_GRAPH_BEFORE_INSERT", False):
-        print("Clearing Database")
         clear_database(memgraph)
 
     _delete_existing_document_graph(memgraph, document.id)
@@ -18,17 +27,34 @@ def save_graph_to_database(document, graph_data):
     _create_edges(memgraph, graph_data.get("edges", []))
 
 
-def clear_database(memgraph):
+def clear_database(memgraph: Memgraph) -> None:
+    """
+    Delete the entire graph from Memgraph.
+
+    This is a destructive development/debug helper and should not be used as the
+    normal persistence strategy for document reprocessing.
+    """
     memgraph.execute("MATCH (n) DETACH DELETE n")
 
-def _delete_existing_document_graph(memgraph, document_id):
+
+def _delete_existing_document_graph(memgraph: Memgraph, document_id: int) -> None:
+    """
+    Remove all nodes and attached edges for a single document.
+    """
     query = """
     MATCH (n:Entity {document_id: $document_id})
     DETACH DELETE n
     """
     memgraph.execute(query, {"document_id": document_id})
 
-def _create_nodes(memgraph, nodes):
+
+def _create_nodes(memgraph: Memgraph, nodes: list[dict[str, Any]]) -> None:
+    """
+    Insert or update graph nodes for a document in Memgraph.
+
+    A stable application-level identifier is stored as `graph_id` so QA results
+    can be aligned with frontend Cytoscape node ids.
+    """
     query = """
     MERGE (n:Entity {
         document_id: $document_id,
@@ -45,7 +71,7 @@ def _create_nodes(memgraph, nodes):
         memgraph.execute(
             query,
             {
-                "graph_id":node['id'],
+                "graph_id": node["id"],
                 "document_id": node["document_id"],
                 "name": node["name"],
                 "label": node["label"],
@@ -55,7 +81,11 @@ def _create_nodes(memgraph, nodes):
             },
         )
 
-def _create_edges(memgraph, edges):
+
+def _create_edges(memgraph: Memgraph, edges: list[dict[str, Any]]) -> None:
+    """
+    Insert or update graph edges for a document in Memgraph.
+    """
     for edge in edges:
         relation_type = _sanitize_relationship_type(edge["type"])
 
@@ -91,7 +121,11 @@ def _create_edges(memgraph, edges):
             },
         )
 
-def _sanitize_relationship_type(value):
+
+def _sanitize_relationship_type(value: str) -> str:
+    """
+    Convert an arbitrary relation label into a safe Cypher relationship type.
+    """
     cleaned = re.sub(r"[^A-Za-z0-9_]", "_", value.strip().upper())
     cleaned = re.sub(r"_+", "_", cleaned)
 
@@ -103,7 +137,11 @@ def _sanitize_relationship_type(value):
 
     return cleaned
 
-def execute_read_query(query):
+
+def execute_read_query(query: str) -> list[dict[str, Any]]:
+    """
+    Execute a read-only query against Memgraph and return the fetched rows.
+    """
     memgraph = Memgraph(
         host=settings.MG_HOST,
         port=int(settings.MG_PORT),

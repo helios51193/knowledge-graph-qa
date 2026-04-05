@@ -1,20 +1,22 @@
 import re
+
 from .base import BaseChunker
 from .chunk import Chunk
 
 
 class SentenceChunker(BaseChunker):
+    """
+    Split text into sentence-level chunks.
+    """
 
-    def chunk(self, text, document_id):
+    def chunk(self, text: str, document_id: int) -> list[Chunk]:
+        sentences = re.split(r"(?<=[.!?])\s+", text)
 
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-
-        chunks = []
+        chunks: list[Chunk] = []
         chunk_id = 0
         current_position = 0
 
         for sentence in sentences:
-
             sentence = sentence.strip()
 
             if not sentence:
@@ -29,7 +31,7 @@ class SentenceChunker(BaseChunker):
                     document_id=document_id,
                     text=sentence,
                     start_index=start_index,
-                    end_index=end_index
+                    end_index=end_index,
                 )
             )
 

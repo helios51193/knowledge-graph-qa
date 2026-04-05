@@ -1,10 +1,14 @@
 from django.conf import settings
 
+from .base import BaseRelationExtractor
 from .heuristic_extractor import HeuristicRelationExtractor
 from .llm_extractor import LlmRelationExtractor
 
 
-def get_relation_extractor():
+def get_relation_extractor() -> BaseRelationExtractor:
+    """
+    Return the configured relation extractor implementation.
+    """
     extractor_type = getattr(settings, "RELATION_EXTRACTOR", "heuristic")
 
     if extractor_type == "heuristic":

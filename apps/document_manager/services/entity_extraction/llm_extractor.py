@@ -1,21 +1,32 @@
 import json
 import re
+from typing import Any
 
 import requests
 from django.conf import settings
 from openai import OpenAI
 
+from ..chunking.chunk import Chunk
 from .base import BaseEntityExtractor
 
 
 class LlmEntityExtractor(BaseEntityExtractor):
+    """
+    Extract entities using an LLM and normalize the resulting entity records.
+    """
 
-    def extract(self, chunks, llm):
-        entities = []
-        seen = set()
+    def extract(
+        self,
+        chunks: list[Chunk],
+        llm: str,
+    ) -> list[dict[str, Any]]:
+        """
+        Extract entities chunk by chunk and deduplicate them across the run.
+        """
+        entities: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
 
         for chunk in chunks:
-
             raw_entities = self._extract_chunk_entities(chunk.text, llm)
 
             for item in raw_entities:
@@ -23,7 +34,7 @@ class LlmEntityExtractor(BaseEntityExtractor):
 
                 if normalized is None:
                     continue
-                    
+
                 entity_key = (
                     normalized["label"].lower(),
                     normalized["name"].lower(),
@@ -31,13 +42,16 @@ class LlmEntityExtractor(BaseEntityExtractor):
 
                 if entity_key in seen:
                     continue
-                    
+
                 seen.add(entity_key)
                 entities.append(normalized)
-            
+
         return entities
-    
-    def _extract_chunk_entities(self, text, llm):
+
+    def _extract_chunk_entities(self, text: str, llm: str) -> list[dict[str, Any]]:
+        """
+        Ask the configured LLM to extract entities for a single chunk of text.
+        """
         prompt = self._build_prompt(text)
 
         if llm == "gpt4":
@@ -48,9 +62,12 @@ class LlmEntityExtractor(BaseEntityExtractor):
             raise ValueError(f"Unsupported LLM for entity extraction: {llm}")
 
         return self._parse_json_response(response_text)
-    
-    def _build_prompt(self, text):
-         return f"""
+
+    def _build_prompt(self, text: str) -> str:
+        """
+        Build the JSON-only entity extraction prompt for the LLM.
+        """
+        return f"""
             Extract entities from the text below.
 
             Return ONLY valid JSON.
@@ -80,9 +97,10 @@ class LlmEntityExtractor(BaseEntityExtractor):
             \"\"\"
             """.strip()
 
-
-    def _extract_with_openai(self, prompt):
-
+    def _extract_with_openai(self, prompt: str) -> str:
+        """
+        Send the entity extraction prompt to OpenAI.
+        """
         client = OpenAI(api_key=settings.OPEN_AI_KEY)
 
         response = client.chat.completions.create(
@@ -91,18 +109,21 @@ class LlmEntityExtractor(BaseEntityExtractor):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an information extraction system that returns JSON only."
+                    "content": "You are an information extraction system that returns JSON only.",
                 },
                 {
                     "role": "user",
-                    "content": prompt
-                }
-            ]
+                    "content": prompt,
+                },
+            ],
         )
 
         return response.choices[0].message.content
 
-    def _extract_with_ollama(self, prompt):
+    def _extract_with_ollama(self, prompt: str) -> str:
+        """
+        Send the entity extraction prompt to Ollama.
+        """
         host = getattr(settings, "OLLAMA_HOST", "localhost")
         port = getattr(settings, "OLLAMA_PORT", "11434")
         model = getattr(settings, "OLLAMA_ENTITY_MODEL", "llama3.2")
@@ -115,7 +136,7 @@ class LlmEntityExtractor(BaseEntityExtractor):
                 "stream": False,
                 "options": {
                     "temperature": getattr(settings, "ENTITY_LLM_TEMPERATURE", 0)
-                }
+                },
             },
             timeout=getattr(settings, "ENTITY_LLM_TIMEOUT", 90),
         )
@@ -128,7 +149,10 @@ class LlmEntityExtractor(BaseEntityExtractor):
         data = response.json()
         return data.get("response", "")
 
-    def _parse_json_response(self, response_text):
+    def _parse_json_response(self, response_text: str) -> list[dict[str, Any]]:
+        """
+        Parse the LLM response into a list of entity dictionaries.
+        """
         cleaned = self._strip_code_fences(response_text)
 
         try:
@@ -144,7 +168,10 @@ class LlmEntityExtractor(BaseEntityExtractor):
 
         return entities
 
-    def _strip_code_fences(self, text):
+    def _strip_code_fences(self, text: str) -> str:
+        """
+        Remove markdown code fences from an LLM response if present.
+        """
         text = text.strip()
 
         if text.startswith("```"):
@@ -152,9 +179,11 @@ class LlmEntityExtractor(BaseEntityExtractor):
             text = re.sub(r"\s*```$", "", text)
 
         return text.strip()
-    
 
-    def _extract_json_object(self, text):
+    def _extract_json_object(self, text: str) -> str:
+        """
+        Extract the outermost JSON object from a noisy text response.
+        """
         start = text.find("{")
         end = text.rfind("}")
 
@@ -162,8 +191,15 @@ class LlmEntityExtractor(BaseEntityExtractor):
             raise ValueError("LLM did not return valid JSON.")
 
         return text[start:end + 1]
-    
-    def _normalize_entity(self, item, chunk):
+
+    def _normalize_entity(
+        self,
+        item: dict[str, Any],
+        chunk: Chunk,
+    ) -> dict[str, Any] | None:
+        """
+        Normalize and validate a raw entity record returned by the LLM.
+        """
         if not isinstance(item, dict):
             return None
 
@@ -186,4 +222,3 @@ class LlmEntityExtractor(BaseEntityExtractor):
             "end_index": chunk.end_index,
             "source_text": chunk.text,
         }
-

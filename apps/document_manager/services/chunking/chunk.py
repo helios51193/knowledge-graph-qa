@@ -3,6 +3,9 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Chunk:
+    """
+    Represent a document chunk used during extraction and relation analysis.
+    """
 
     chunk_id: int
     document_id: int

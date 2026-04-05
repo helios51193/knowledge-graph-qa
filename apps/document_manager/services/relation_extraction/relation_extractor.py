@@ -1,7 +1,20 @@
-from .factory import get_relation_extractor
-from ..logger import log_stage
+from typing import Any
 
-def extract_relations(chunks, entities, llm, document=None):
+from ...models import Document
+from ..chunking.chunk import Chunk
+from ..logger import log_stage
+from .factory import get_relation_extractor
+
+
+def extract_relations(
+    chunks: list[Chunk],
+    entities: list[dict[str, Any]],
+    llm: str,
+    document: Document | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Extract relations using the configured relation extractor and optionally log the stage.
+    """
     if document is not None:
         log_stage(document, "RELATION_EXTRACTION", "Starting relation extraction")
 

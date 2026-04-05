@@ -1,5 +1,6 @@
 import re
 from collections import Counter, defaultdict
+from typing import Any
 
 import inflect
 from rapidfuzz import fuzz
@@ -13,6 +14,7 @@ LABEL_THRESHOLDS = {
     "Location": 0.92,
     "Person": 0.95,
 }
+
 LABEL_PRIORITY = {
     "Organization": 4,
     "Location": 3,
@@ -21,34 +23,37 @@ LABEL_PRIORITY = {
 }
 
 
-def resolve_entities(entities):
+def resolve_entities(
+    entities: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[tuple[str, str], dict[str, Any]], dict[str, dict[str, int]]]:
     """
+    Resolve duplicate or near-duplicate entities into canonical forms.
+
     Returns:
-    - resolved_entities: entity list with canonical_name and canonical_label
+    - resolved_entities: entities enriched with canonical name/label metadata
     - canonical_map: maps raw (label, name) pairs to canonical entity info
     - label_summary: per canonical entity, counts of observed labels
     """
-    grouped = defaultdict(list)
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
     for entity in entities:
         grouped[entity["label"]].append(entity)
 
-    clusters = []
+    clusters: list[list[dict[str, Any]]] = []
     for label, group in grouped.items():
         clusters.extend(_cluster_entities(group, label))
 
     merged_clusters = _merge_cross_label_clusters(clusters)
 
-    canonical_map = {}
-    resolved_entities = []
-    label_summary = {}
+    canonical_map: dict[tuple[str, str], dict[str, Any]] = {}
+    resolved_entities: list[dict[str, Any]] = []
+    label_summary: dict[str, dict[str, int]] = {}
 
     for cluster in merged_clusters:
         canonical_name = _choose_canonical_name(cluster)
         canonical_label = _choose_canonical_label(cluster)
         label_counts = _build_label_counts(cluster)
         aliases = _build_aliases(cluster)
-
 
         label_summary[canonical_name] = label_counts
 
@@ -59,7 +64,7 @@ def resolve_entities(entities):
                 "canonical_name": canonical_name,
                 "canonical_label": canonical_label,
                 "label_counts": label_counts,
-                "aliases":aliases
+                "aliases": aliases,
             }
             canonical_map[key] = canonical_info
 
@@ -73,15 +78,14 @@ def resolve_entities(entities):
     return resolved_entities, canonical_map, label_summary
 
 
-def _build_aliases(cluster):
-    return sorted({
-        entity["name"].strip()
-        for entity in cluster
-        if entity.get("name") and entity["name"].strip()
-    })
-
-def apply_entity_resolution_to_relations(relations, canonical_map):
-    resolved_relations = []
+def apply_entity_resolution_to_relations(
+    relations: list[dict[str, Any]],
+    canonical_map: dict[tuple[str, str], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Rewrite relation endpoints to use canonical entity names and labels.
+    """
+    resolved_relations: list[dict[str, Any]] = []
 
     for relation in relations:
         source_key = (relation.get("source_label", "Entity"), relation["source"])
@@ -105,8 +109,27 @@ def apply_entity_resolution_to_relations(relations, canonical_map):
     return resolved_relations
 
 
-def _cluster_entities(entities, label):
-    clusters = []
+def _build_aliases(cluster: list[dict[str, Any]]) -> list[str]:
+    """
+    Collect all distinct surface forms observed in a resolved entity cluster.
+    """
+    return sorted(
+        {
+            entity["name"].strip()
+            for entity in cluster
+            if entity.get("name") and entity["name"].strip()
+        }
+    )
+
+
+def _cluster_entities(
+    entities: list[dict[str, Any]],
+    label: str,
+) -> list[list[dict[str, Any]]]:
+    """
+    Cluster entities within the same label using similarity-based merging.
+    """
+    clusters: list[list[dict[str, Any]]] = []
 
     for entity in entities:
         placed = False
@@ -123,14 +146,16 @@ def _cluster_entities(entities, label):
     return clusters
 
 
-def _merge_cross_label_clusters(clusters):
+def _merge_cross_label_clusters(
+    clusters: list[list[dict[str, Any]]],
+) -> list[list[dict[str, Any]]]:
     """
-    Merge clusters across labels when the names are strong matches.
-    This is what lets us reconcile:
-    - Moonkeep as Person
-    - Moonkeep as Organization
+    Merge clusters across labels when names are strong enough matches.
+
+    This helps reconcile cases where the same surface form was extracted under
+    different labels, such as an entity oscillating between Person and Organization.
     """
-    merged = []
+    merged: list[list[dict[str, Any]]] = []
 
     for cluster in clusters:
         placed = False
@@ -147,23 +172,36 @@ def _merge_cross_label_clusters(clusters):
     return merged
 
 
-def _should_merge(entity, cluster, label):
+def _should_merge(
+    entity: dict[str, Any],
+    cluster: list[dict[str, Any]],
+    label: str,
+) -> bool:
+    """
+    Decide whether an entity should join an existing same-label cluster.
+    """
     if label == "Person":
         if any(_looks_like_person_alias(entity, other) for other in cluster):
             return True
 
     threshold = LABEL_THRESHOLDS.get(label, 0.95)
-
-    scores = [
-        _entity_similarity(entity, other)
-        for other in cluster
-    ]
+    scores = [_entity_similarity(entity, other) for other in cluster]
 
     return max(scores, default=0.0) >= threshold
 
 
-def _looks_like_person_alias(left, right):
-    
+def _looks_like_person_alias(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> bool:
+    """
+    Detect common short-form person aliases such as surname-only references.
+
+    This intentionally uses a conservative rule:
+    - one side must be a single token
+    - the other side must be a short multi-token form
+    - the single token must match the final token of the longer name
+    """
     if left.get("label") != "Person" or right.get("label") != "Person":
         return False
 
@@ -179,10 +217,6 @@ def _looks_like_person_alias(left, right):
     if not left_tokens or not right_tokens:
         return False
 
-    # Case 1: one-token suffix reference like:
-    # "Old Major" -> "Major"
-    # "Mr Jones" -> "Jones"
-    # "John Smith" -> "Smith"
     if len(left_tokens) == 1 and len(right_tokens) in {2, 3}:
         return left_tokens[0] == right_tokens[-1]
 
@@ -192,8 +226,14 @@ def _looks_like_person_alias(left, right):
     return False
 
 
-def _should_merge_clusters(left_cluster, right_cluster):
-    scores = []
+def _should_merge_clusters(
+    left_cluster: list[dict[str, Any]],
+    right_cluster: list[dict[str, Any]],
+) -> bool:
+    """
+    Decide whether two clusters from different labels should be merged.
+    """
+    scores: list[float] = []
 
     for left in left_cluster:
         for right in right_cluster:
@@ -204,11 +244,14 @@ def _should_merge_clusters(left_cluster, right_cluster):
 
     best_score = max(scores)
 
-    # Be conservative when merging across labels.
+    # Cross-label merging is intentionally more conservative than same-label merging.
     return best_score >= 0.94
 
 
-def _entity_similarity(left, right):
+def _entity_similarity(left: dict[str, Any], right: dict[str, Any]) -> float:
+    """
+    Compute a similarity score between two entity mentions.
+    """
     left_name = left["name"]
     right_name = right["name"]
 
@@ -226,27 +269,33 @@ def _entity_similarity(left, right):
     singular_ratio = fuzz.token_sort_ratio(left_singular, right_singular) / 100.0
     token_overlap = _token_overlap(left_singular, right_singular)
 
-    context_bonus = 0.0
-    if left.get("chunk_id") == right.get("chunk_id"):
-        context_bonus = 0.03
+    context_bonus = 0.03 if left.get("chunk_id") == right.get("chunk_id") else 0.0
 
     score = (
-        0.40 * exact_singular +
-        0.25 * fuzzy_ratio +
-        0.25 * singular_ratio +
-        0.10 * token_overlap +
-        context_bonus
+        0.40 * exact_singular
+        + 0.25 * fuzzy_ratio
+        + 0.25 * singular_ratio
+        + 0.10 * token_overlap
+        + context_bonus
     )
 
     if _looks_like_plural_variant(left_norm, right_norm):
         score += 0.05
-    
-    score += _person_name_variant_score(left_norm, right_norm,  left.get("label"), right.get("label"))
+
+    score += _person_name_variant_score(
+        left_norm,
+        right_norm,
+        left.get("label"),
+        right.get("label"),
+    )
 
     return min(score, 1.0)
 
 
-def _normalize_surface(text):
+def _normalize_surface(text: str) -> str:
+    """
+    Normalize a surface form for similarity comparison.
+    """
     value = str(text or "").strip().lower()
     value = re.sub(r"[^a-z0-9\s\-']", " ", value)
     value = re.sub(r"\s+", " ", value).strip()
@@ -254,7 +303,10 @@ def _normalize_surface(text):
     return value
 
 
-def _singularize_phrase(text):
+def _singularize_phrase(text: str) -> str:
+    """
+    Singularize the final token of a phrase to reduce simple number variants.
+    """
     words = text.split()
     if not words:
         return text
@@ -266,12 +318,18 @@ def _singularize_phrase(text):
     return " ".join(words)
 
 
-def _singularize_word(word):
+def _singularize_word(word: str) -> str:
+    """
+    Singularize a single word when `inflect` recognizes it as plural.
+    """
     singular = _inflect.singular_noun(word)
     return singular if singular else word
 
 
-def _token_overlap(left, right):
+def _token_overlap(left: str, right: str) -> float:
+    """
+    Compute Jaccard-style token overlap between two normalized phrases.
+    """
     left_tokens = set(left.split())
     right_tokens = set(right.split())
 
@@ -283,7 +341,10 @@ def _token_overlap(left, right):
     return intersection / union
 
 
-def _looks_like_plural_variant(left, right):
+def _looks_like_plural_variant(left: str, right: str) -> bool:
+    """
+    Detect simple plural/singular surface variation.
+    """
     return (
         left == right + "s"
         or right == left + "s"
@@ -291,7 +352,13 @@ def _looks_like_plural_variant(left, right):
     )
 
 
-def _choose_canonical_name(cluster):
+def _choose_canonical_name(cluster: list[dict[str, Any]]) -> str:
+    """
+    Select the canonical display name for a resolved entity cluster.
+
+    Person entities prefer fuller names, while non-person entities prefer the
+    shortest stable surface form.
+    """
     names = [entity["name"].strip() for entity in cluster if entity.get("name")]
     if not names:
         return ""
@@ -322,7 +389,10 @@ def _choose_canonical_name(cluster):
     return singular_candidate or canonical
 
 
-def _choose_canonical_label(cluster):
+def _choose_canonical_label(cluster: list[dict[str, Any]]) -> str:
+    """
+    Choose the canonical label using observed counts and label priority.
+    """
     counts = Counter(
         entity.get("label", "Concept")
         for entity in cluster
@@ -338,7 +408,10 @@ def _choose_canonical_label(cluster):
     )
 
 
-def _build_label_counts(cluster):
+def _build_label_counts(cluster: list[dict[str, Any]]) -> dict[str, int]:
+    """
+    Build a complete label-count summary for a resolved cluster.
+    """
     counts = {
         "Organization": 0,
         "Location": 0,
@@ -358,7 +431,10 @@ def _build_label_counts(cluster):
     return counts
 
 
-def _restore_case(normalized_text, original_text):
+def _restore_case(normalized_text: str, original_text: str) -> str:
+    """
+    Restore a normalized phrase to something closer to the original case style.
+    """
     if not normalized_text:
         return original_text
 
@@ -370,8 +446,16 @@ def _restore_case(normalized_text, original_text):
 
     return normalized_text
 
-def _person_name_variant_score(left, right, left_label=None, right_label=None):
-    
+
+def _person_name_variant_score(
+    left: str,
+    right: str,
+    left_label: str | None = None,
+    right_label: str | None = None,
+) -> float:
+    """
+    Add a small bonus for conservative person-name suffix matches.
+    """
     if left_label != "Person" or right_label != "Person":
         return 0.0
 
@@ -381,7 +465,6 @@ def _person_name_variant_score(left, right, left_label=None, right_label=None):
     if not left_tokens or not right_tokens:
         return 0.0
 
-    # Small bonus only for one-token suffix references.
     if len(left_tokens) == 1 and len(right_tokens) in {2, 3} and left_tokens[0] == right_tokens[-1]:
         return 0.12
 
@@ -389,4 +472,3 @@ def _person_name_variant_score(left, right, left_label=None, right_label=None):
         return 0.12
 
     return 0.0
-

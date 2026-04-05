@@ -1,6 +1,13 @@
+from typing import Any
+
+from ..chunking.chunk import Chunk
 from .base import BaseRelationExtractor
 
+
 class HeuristicRelationExtractor(BaseRelationExtractor):
+    """
+    Extract relations using rule-based phrase matching over chunk text.
+    """
 
     RELATION_PATTERNS = [
         ("works at", "WORKS_AT"),
@@ -36,9 +43,17 @@ class HeuristicRelationExtractor(BaseRelationExtractor):
         ("mentor of", "MENTORS"),
     ]
 
-    def extract(self, chunks, entities, llm):
-        relations = []
-        seen = set()
+    def extract(
+        self,
+        chunks: list[Chunk],
+        entities: list[dict[str, Any]],
+        llm: str,
+    ) -> list[dict[str, Any]]:
+        """
+        Extract heuristic relations from chunks using predefined relation phrases.
+        """
+        relations: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
 
         for chunk in chunks:
             chunk_entities = self._get_chunk_entities(chunk, entities)
@@ -77,8 +92,14 @@ class HeuristicRelationExtractor(BaseRelationExtractor):
 
         return relations
 
-
-    def _get_chunk_entities(self, chunk, entities):
+    def _get_chunk_entities(
+        self,
+        chunk: Chunk,
+        entities: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """
+        Return the entities that belong to the chunk or its source chunk window.
+        """
         source_chunk_ids = chunk.source_chunk_ids or [chunk.chunk_id]
         return [
             entity
@@ -86,9 +107,15 @@ class HeuristicRelationExtractor(BaseRelationExtractor):
             if entity.get("document_id") == chunk.document_id
             and entity.get("chunk_id") in source_chunk_ids
         ]
-    
-    def _pair_entities(self, chunk_entities):
-        pairs = []
+
+    def _pair_entities(
+        self,
+        chunk_entities: list[dict[str, Any]],
+    ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+        """
+        Build ordered source-target pairs from chunk entities.
+        """
+        pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
         for i in range(len(chunk_entities)):
             for j in range(len(chunk_entities)):
@@ -98,7 +125,16 @@ class HeuristicRelationExtractor(BaseRelationExtractor):
 
         return pairs
 
-    def _build_relation(self, source, target, relation_type, chunk):
+    def _build_relation(
+        self,
+        source: dict[str, Any],
+        target: dict[str, Any],
+        relation_type: str,
+        chunk: Chunk,
+    ) -> dict[str, Any]:
+        """
+        Build a normalized relation record from two entities and a chunk.
+        """
         return {
             "source": source["name"],
             "source_label": source["label"],
@@ -111,5 +147,3 @@ class HeuristicRelationExtractor(BaseRelationExtractor):
             "end_index": chunk.end_index,
             "source_text": chunk.text,
         }
-
-

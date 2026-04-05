@@ -1,6 +1,12 @@
 from django.conf import settings
 
-def build_chunk_metrics(chunks):
+from .chunk import Chunk
+
+
+def build_chunk_metrics(chunks: list[Chunk]) -> dict[str, int | float | str]:
+    """
+    Build simple chunking metrics for logging and pipeline observability.
+    """
     if not chunks:
         return {
             "chunker": getattr(settings, "DOCUMENT_CHUNKER", "unknown"),

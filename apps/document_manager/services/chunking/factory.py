@@ -1,13 +1,16 @@
 from django.conf import settings
 
-from .word_chunker import WordChunker
-from .sentence_chunker import SentenceChunker
+from .base import BaseChunker
 from .paragraph_chunker import ParagraphChunker
 from .recursive_chunker import RecursiveChunker
+from .sentence_chunker import SentenceChunker
+from .word_chunker import WordChunker
 
 
-def get_chunker():
-
+def get_chunker() -> BaseChunker:
+    """
+    Return the configured chunker implementation.
+    """
     chunker_type = getattr(settings, "DOCUMENT_CHUNKER", "word")
 
     if chunker_type == "word":
@@ -22,4 +25,4 @@ def get_chunker():
     if chunker_type == "recursive":
         return RecursiveChunker()
 
-    raise ValueError("Invalid chunker type")
+    raise ValueError(f"Invalid chunker type: {chunker_type}")

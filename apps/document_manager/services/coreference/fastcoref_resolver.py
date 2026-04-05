@@ -1,14 +1,27 @@
 import re
+from typing import Any
 
 from .base import BaseCoreferenceResolver
 
+
 class FastCoreferenceResolver(BaseCoreferenceResolver):
+    """
+    Coreference resolver backed by `fastcoref`.
+
+    The resolver uses the underlying model to identify clusters, then applies
+    conservative pronoun-style replacements to produce a resolved text version
+    for downstream relation extraction.
+    """
+
     _model = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._device = "cpu"
 
-    def resolve(self, text):
+    def resolve(self, text: str) -> dict[str, Any]:
+        """
+        Resolve coreference clusters and return both original and resolved text.
+        """
         cleaned_text = str(text or "").strip()
         if not cleaned_text:
             return {
@@ -38,7 +51,10 @@ class FastCoreferenceResolver(BaseCoreferenceResolver):
         }
 
     @classmethod
-    def _get_model(cls):
+    def _get_model(cls) -> Any:
+        """
+        Lazily load and cache the fastcoref model.
+        """
         if cls._model is None:
             try:
                 from fastcoref import FCoref
@@ -51,8 +67,19 @@ class FastCoreferenceResolver(BaseCoreferenceResolver):
 
         return cls._model
 
-    def _apply_coreference_replacements(self, text, clusters):
-        replacements = []
+    def _apply_coreference_replacements(
+        self,
+        text: str,
+        clusters: list[list[tuple[int, int]]],
+    ) -> str:
+        """
+        Replace pronoun-like mentions with a chosen canonical antecedent.
+
+        The replacement strategy is intentionally conservative so the resolved
+        text is more useful for relation extraction without aggressively rewriting
+        the original phrasing.
+        """
+        replacements: list[tuple[int, int, str]] = []
 
         for cluster in clusters:
             if not cluster:
@@ -93,9 +120,16 @@ class FastCoreferenceResolver(BaseCoreferenceResolver):
 
         return resolved_text
 
-    def _choose_canonical_span(self, text, cluster):
+    def _choose_canonical_span(
+        self,
+        text: str,
+        cluster: list[tuple[int, int]],
+    ) -> tuple[int, int] | None:
         """
-        Prefer the first non-pronoun mention as the canonical antecedent.
+        Choose the canonical antecedent span for a cluster.
+
+        Prefer the first non-pronoun mention, falling back to the first cluster
+        item when every mention looks pronoun-like.
         """
         for span in cluster:
             start, end = span
@@ -106,7 +140,10 @@ class FastCoreferenceResolver(BaseCoreferenceResolver):
 
         return cluster[0] if cluster else None
 
-    def _is_pronoun_like(self, text):
+    def _is_pronoun_like(self, text: str) -> bool:
+        """
+        Return True when a mention looks like a pronoun or possessive pronoun.
+        """
         cleaned = re.sub(r"[^a-zA-Z']", "", str(text or "")).lower()
 
         pronouns = {
@@ -121,10 +158,20 @@ class FastCoreferenceResolver(BaseCoreferenceResolver):
 
         return cleaned in pronouns
 
-    def _match_pronoun_form(self, canonical_text, mention_text):
+    def _match_pronoun_form(self, canonical_text: str, mention_text: str) -> str:
+        """
+        Preserve possessive form when replacing possessive-style pronouns.
+        """
         cleaned_mention = re.sub(r"[^a-zA-Z']", "", str(mention_text or "")).lower()
 
-        if cleaned_mention in {"his", "her", "hers", "their", "theirs", "its", "your", "yours", "our", "ours", "my", "mine"}:
+        if cleaned_mention in {
+            "his", "her", "hers",
+            "their", "theirs",
+            "its",
+            "your", "yours",
+            "our", "ours",
+            "my", "mine",
+        }:
             if canonical_text.endswith("s"):
                 return f"{canonical_text}'"
             return f"{canonical_text}'s"

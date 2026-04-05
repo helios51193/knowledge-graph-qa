@@ -1,17 +1,32 @@
 import json
 import re
+from typing import Any
 
 import requests
 from django.conf import settings
 from openai import OpenAI
 from rapidfuzz import fuzz
+
+from ..chunking.chunk import Chunk
 from .base import BaseRelationExtractor
 
-class LlmRelationExtractor(BaseRelationExtractor):
 
-    def extract(self, chunks, entities, llm):
-        relations = []
-        seen = set()
+class LlmRelationExtractor(BaseRelationExtractor):
+    """
+    Extract relations using an LLM and then normalize the returned relation records.
+    """
+
+    def extract(
+        self,
+        chunks: list[Chunk],
+        entities: list[dict[str, Any]],
+        llm: str,
+    ) -> list[dict[str, Any]]:
+        """
+        Extract and normalize relations chunk by chunk, with deduplication across the run.
+        """
+        relations: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
 
         for chunk in chunks:
             chunk_entities = self._get_chunk_entities(chunk, entities)
@@ -46,18 +61,33 @@ class LlmRelationExtractor(BaseRelationExtractor):
                 relations.append(normalized)
 
         return relations
-    
-    def _get_chunk_entities(self, chunk, entities):
+
+    def _get_chunk_entities(
+        self,
+        chunk: Chunk,
+        entities: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """
+        Return the entities that belong to the chunk or its source chunk window.
+        """
         source_chunk_ids = chunk.source_chunk_ids or [chunk.chunk_id]
-        
+
         return [
             entity
             for entity in entities
             if entity.get("document_id") == chunk.document_id
             and entity.get("chunk_id") in source_chunk_ids
         ]
-    
-    def _extract_chunk_relations(self, text, entities, llm):
+
+    def _extract_chunk_relations(
+        self,
+        text: str,
+        entities: list[dict[str, Any]],
+        llm: str,
+    ) -> list[dict[str, Any]]:
+        """
+        Ask the configured LLM to extract relations for a single chunk.
+        """
         prompt = self._build_prompt(text, entities)
 
         if llm == "gpt4":
@@ -69,7 +99,10 @@ class LlmRelationExtractor(BaseRelationExtractor):
 
         return self._parse_json_response(response_text)
 
-    def _build_prompt(self, text, entities):
+    def _build_prompt(self, text: str, entities: list[dict[str, Any]]) -> str:
+        """
+        Build the JSON-only relation extraction prompt for the LLM.
+        """
         entity_list = [
             {
                 "label": entity["label"],
@@ -115,8 +148,11 @@ class LlmRelationExtractor(BaseRelationExtractor):
                 {text}
                 \"\"\"
                 """.strip()
-    
-    def _extract_with_openai(self, prompt):
+
+    def _extract_with_openai(self, prompt: str) -> str:
+        """
+        Send the relation extraction prompt to OpenAI.
+        """
         client = OpenAI(api_key=settings.OPEN_AI_KEY)
 
         response = client.chat.completions.create(
@@ -125,18 +161,21 @@ class LlmRelationExtractor(BaseRelationExtractor):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an information extraction system that returns JSON only."
+                    "content": "You are an information extraction system that returns JSON only.",
                 },
                 {
                     "role": "user",
-                    "content": prompt
-                }
-            ]
+                    "content": prompt,
+                },
+            ],
         )
 
         return response.choices[0].message.content
 
-    def _extract_with_ollama(self, prompt):
+    def _extract_with_ollama(self, prompt: str) -> str:
+        """
+        Send the relation extraction prompt to Ollama.
+        """
         host = getattr(settings, "OLLAMA_HOST", "localhost")
         port = getattr(settings, "OLLAMA_PORT", "11434")
         model = getattr(settings, "OLLAMA_RELATION_MODEL", "llama3.2")
@@ -149,7 +188,7 @@ class LlmRelationExtractor(BaseRelationExtractor):
                 "stream": False,
                 "options": {
                     "temperature": getattr(settings, "RELATION_LLM_TEMPERATURE", 0)
-                }
+                },
             },
             timeout=getattr(settings, "RELATION_LLM_TIMEOUT", 90),
         )
@@ -162,8 +201,10 @@ class LlmRelationExtractor(BaseRelationExtractor):
         data = response.json()
         return data.get("response", "")
 
-    def _parse_json_response(self, response_text):
-        
+    def _parse_json_response(self, response_text: str) -> list[dict[str, Any]]:
+        """
+        Parse the LLM response into a list of relation dictionaries.
+        """
         cleaned = self._strip_code_fences(response_text)
 
         try:
@@ -178,8 +219,11 @@ class LlmRelationExtractor(BaseRelationExtractor):
             return []
 
         return relations
-    
-    def _strip_code_fences(self, text):
+
+    def _strip_code_fences(self, text: str) -> str:
+        """
+        Remove markdown code fences from an LLM response if present.
+        """
         text = text.strip()
 
         if text.startswith("```"):
@@ -187,8 +231,11 @@ class LlmRelationExtractor(BaseRelationExtractor):
             text = re.sub(r"\s*```$", "", text)
 
         return text.strip()
-    
-    def _extract_json_object(self, text):
+
+    def _extract_json_object(self, text: str) -> str:
+        """
+        Extract the outermost JSON object from a noisy text response.
+        """
         start = text.find("{")
         end = text.rfind("}")
 
@@ -196,8 +243,16 @@ class LlmRelationExtractor(BaseRelationExtractor):
             raise ValueError("LLM did not return valid JSON.")
 
         return text[start:end + 1]
-    
-    def _normalize_relation(self, item, chunk, chunk_entities):
+
+    def _normalize_relation(
+        self,
+        item: dict[str, Any],
+        chunk: Chunk,
+        chunk_entities: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """
+        Normalize and validate a raw relation record returned by the LLM.
+        """
         if not isinstance(item, dict):
             return None
 
@@ -216,10 +271,10 @@ class LlmRelationExtractor(BaseRelationExtractor):
 
         if source_entity is None or target_entity is None:
             return None
-        
+
+        # Skip relations whose endpoints collapse to the same resolved entity.
         if source_entity["name"].strip().lower() == target_entity["name"].strip().lower():
             return None
-        
 
         relation_type = relation_type.upper().replace(" ", "_")
 
@@ -236,7 +291,17 @@ class LlmRelationExtractor(BaseRelationExtractor):
             "source_text": chunk.text,
         }
 
-    def _resolve_entity_name(self, candidate_name, chunk_entities):
+    def _resolve_entity_name(
+        self,
+        candidate_name: str,
+        chunk_entities: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """
+        Map an LLM-returned entity name back to one of the known chunk entities.
+
+        This first tries exact normalized matching, then uses fuzzy matching over
+        names and aliases as a repair step for near-miss surface forms.
+        """
         candidate_norm = self._normalize_surface(candidate_name)
 
         if not candidate_norm:
@@ -246,7 +311,7 @@ class LlmRelationExtractor(BaseRelationExtractor):
             if self._normalize_surface(entity["name"]) == candidate_norm:
                 return entity
 
-        best_entity = None
+        best_entity: dict[str, Any] | None = None
         best_score = 0.0
 
         for entity in chunk_entities:
@@ -270,8 +335,10 @@ class LlmRelationExtractor(BaseRelationExtractor):
 
         return None
 
-
-    def _normalize_surface(self, text):
+    def _normalize_surface(self, text: str) -> str:
+        """
+        Normalize a surface form for matching and fuzzy comparison.
+        """
         text = str(text or "").strip().lower()
         text = re.sub(r"[^a-z0-9\s\-']", " ", text)
         text = re.sub(r"\s+", " ", text).strip()

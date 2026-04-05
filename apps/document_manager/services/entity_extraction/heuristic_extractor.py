@@ -1,6 +1,9 @@
 import re
+from typing import Any
 
+from ..chunking.chunk import Chunk
 from .base import BaseEntityExtractor
+
 
 STOPWORDS = {
     "The", "A", "An", "This", "That", "These", "Those",
@@ -8,25 +11,35 @@ STOPWORDS = {
     "In", "On", "At", "By", "For", "From", "To", "With", "Of",
     "And", "Or", "But", "If", "Then", "So", "As", "Is", "Are",
     "Was", "Were", "Be", "Been", "Being",
-    "Chapter", "Section", "Figure", "Table"
+    "Chapter", "Section", "Figure", "Table",
 }
 
 ORG_SUFFIXES = {
     "Inc", "Ltd", "LLC", "Company", "Corporation", "Corp", "University",
-    "Institute", "Agency", "Bank", "Labs", "Lab", "Technologies", "Systems"
+    "Institute", "Agency", "Bank", "Labs", "Lab", "Technologies", "Systems",
 }
-
 
 LOCATION_HINTS = {
     "City", "Town", "Village", "State", "Country", "Street", "Road",
-    "River", "Mountain", "Lake", "Park"
+    "River", "Mountain", "Lake", "Park",
 }
 
-class HeuristicEntityExtractor(BaseEntityExtractor):
 
-    def extract(self, chunks, llm):
-        entities = []
-        seen = set()
+class HeuristicEntityExtractor(BaseEntityExtractor):
+    """
+    Extract entities using capitalization heuristics and simple label rules.
+    """
+
+    def extract(
+        self,
+        chunks: list[Chunk],
+        llm: str,
+    ) -> list[dict[str, Any]]:
+        """
+        Extract heuristic entities from chunk text and deduplicate them across the run.
+        """
+        entities: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
 
         for chunk in chunks:
             candidates = self._extract_candidates(chunk.text)
@@ -45,26 +58,37 @@ class HeuristicEntityExtractor(BaseEntityExtractor):
 
                 seen.add(entity_key)
 
-                entities.append({
-                    "label": label,
-                    "name": name,
-                    "document_id": chunk.document_id,
-                    "chunk_id": chunk.chunk_id,
-                    "start_index": chunk.start_index,
-                    "end_index": chunk.end_index,
-                    "source_text": chunk.text,
-                })
+                entities.append(
+                    {
+                        "label": label,
+                        "name": name,
+                        "document_id": chunk.document_id,
+                        "chunk_id": chunk.chunk_id,
+                        "start_index": chunk.start_index,
+                        "end_index": chunk.end_index,
+                        "source_text": chunk.text,
+                    }
+                )
 
         return entities
-     
-    def _extract_candidates(self, text):
+
+    def _extract_candidates(self, text: str) -> list[str]:
+        """
+        Extract capitalized candidate phrases from text.
+        """
         pattern = r"\b(?:[A-Z][a-zA-Z]+|[A-Z]{2,})(?:\s+(?:[A-Z][a-zA-Z]+|[A-Z]{2,}))*\b"
         return re.findall(pattern, text)
 
-    def _normalize_entity_name(self, name):
+    def _normalize_entity_name(self, name: str) -> str:
+        """
+        Normalize whitespace inside a candidate entity name.
+        """
         return re.sub(r"\s+", " ", name).strip()
-    
-    def _is_valid_candidate(self, name):
+
+    def _is_valid_candidate(self, name: str) -> bool:
+        """
+        Filter out obvious non-entity candidates.
+        """
         if not name:
             return False
 
@@ -79,7 +103,10 @@ class HeuristicEntityExtractor(BaseEntityExtractor):
 
         return True
 
-    def _guess_entity_label(self, name):
+    def _guess_entity_label(self, name: str) -> str:
+        """
+        Guess an entity label from simple lexical cues.
+        """
         words = name.split()
 
         if len(words) >= 2 and words[-1] in ORG_SUFFIXES:

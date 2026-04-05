@@ -7,24 +7,24 @@ from .chunk import Chunk
 
 
 class RecursiveChunker(BaseChunker):
+    """
+    Split text hierarchically by paragraph, then sentence, then words if needed.
+    """
 
-    def chunk(self, text, document_id):
+    def chunk(self, text: str, document_id: int) -> list[Chunk]:
         max_words = getattr(settings, "CHUNK_SIZE", 200)
         overlap_words = getattr(settings, "CHUNK_OVERLAP", 20)
 
         paragraphs = self._split_paragraphs(text)
-        segments = []
+        segments: list[str] = []
 
         for paragraph in paragraphs:
-            paragraph_word_count = self._word_count(paragraph)
-
-            if paragraph_word_count <= max_words:
+            if self._word_count(paragraph) <= max_words:
                 segments.append(paragraph)
                 continue
 
             sentences = self._split_sentences(paragraph)
-
-            current_segment = []
+            current_segment: list[str] = []
 
             for sentence in sentences:
                 candidate = " ".join(current_segment + [sentence]).strip()
@@ -39,6 +39,7 @@ class RecursiveChunker(BaseChunker):
                 if self._word_count(sentence) <= max_words:
                     current_segment = [sentence]
                 else:
+                    # Fall back to overlapping word windows for very long sentences.
                     segments.extend(
                         self._split_by_words(sentence, max_words, overlap_words)
                     )
@@ -47,7 +48,7 @@ class RecursiveChunker(BaseChunker):
             if current_segment:
                 segments.append(" ".join(current_segment).strip())
 
-        chunks = []
+        chunks: list[Chunk] = []
         chunk_id = 0
         search_start = 0
 
@@ -76,24 +77,34 @@ class RecursiveChunker(BaseChunker):
 
         return chunks
 
-    def _split_paragraphs(self, text):
+    def _split_paragraphs(self, text: str) -> list[str]:
+        """
+        Split text into non-empty paragraph segments.
+        """
         return [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
 
-    def _split_sentences(self, text):
+    def _split_sentences(self, text: str) -> list[str]:
+        """
+        Split text into non-empty sentence segments.
+        """
         return [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
 
-    def _split_by_words(self, text, max_words, overlap_words):
+    def _split_by_words(self, text: str, max_words: int, overlap_words: int) -> list[str]:
+        """
+        Split very long text into overlapping word windows.
+        """
         words = text.split()
         if not words:
             return []
 
         step = max(1, max_words - overlap_words)
-        segments = []
+        segments: list[str] = []
 
         for i in range(0, len(words), step):
             segment_words = words[i:i + max_words]
             if not segment_words:
                 continue
+
             segments.append(" ".join(segment_words))
 
             if i + max_words >= len(words):
@@ -101,5 +112,8 @@ class RecursiveChunker(BaseChunker):
 
         return segments
 
-    def _word_count(self, text):
+    def _word_count(self, text: str) -> int:
+        """
+        Return the number of whitespace-delimited words in a text segment.
+        """
         return len(text.split())
